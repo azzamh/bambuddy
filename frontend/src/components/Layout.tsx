@@ -499,7 +499,7 @@ export function Layout() {
             <Menu className="w-6 h-6 text-white" />
           </button>
           <img
-            src={mode === 'dark' ? '/img/bambuddy_logo_dark_transparent.png' : '/img/bambuddy_logo_light.png'}
+            src={mode === 'dark' ? '/img/bambuddy_logo_dark_2.png' : '/img/bambuddy_logo_light_2.png'}
             alt="Bambuddy"
             className="h-8 ml-3"
           />
@@ -525,7 +525,7 @@ export function Layout() {
         {/* Logo */}
         <div className={`border-b border-bambu-dark-tertiary flex items-center justify-center ${isSidebarCompact || sidebarExpanded ? 'p-4' : 'p-2'}`}>
           <img
-            src={mode === 'dark' ? '/img/bambuddy_logo_dark_transparent.png' : '/img/bambuddy_logo_light.png'}
+            src={mode === 'dark' ? '/img/bambuddy_logo_dark_2.png' : '/img/bambuddy_logo_light_2.png'}
             alt="Bambuddy"
             className={isSidebarCompact || sidebarExpanded ? 'h-16 w-auto' : 'h-8 w-8 object-cover object-left'}
           />

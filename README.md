@@ -1,5 +1,6 @@
 <p align="center">
-  <img src="static/img/bambuddy_logo_dark.png" alt="Bambuddy Logo" width="300">
+  <!-- <img src="static/img/bambuddy_logo_dark.png" alt="Bambuddy Logo" width="300"> -->
+  <img src="static/img/bambuddy_logo_dark_2.png" alt="Bambuddy Logo" width="300">
 </p>
 
 <h1 align="center">Bambuddy</h1>

@@ -1,14 +1,14 @@
 services:
   bambuddy:
-    image: bambuddy:local
+    image: ghcr.io/maziggy/bambuddy:latest
     build: .
     # Usage:
-    #   docker compose up -d          → builds locally from source
-    #   docker compose up -d --build  → forces rebuilding from source
+    #   docker compose up -d          → pulls pre-built image from ghcr.io
+    #   docker compose up -d --build  → builds locally from source
     container_name: bambuddy
     # Run as current user to avoid permission issues with mounted volumes
     # Override with: PUID=$(id -u) PGID=$(id -g) docker compose up -d
-#    user: "${PUID:-1000}:${PGID:-1000}"
+    user: "${PUID:-1000}:${PGID:-1000}"
     #
     # Proxy mode: allow binding to privileged ports (322, 990) as non-root user.
     # Without this, the FTP and RTSP proxies silently fail.
@@ -16,52 +16,42 @@ services:
       - NET_BIND_SERVICE
     #
     # LINUX: Use host mode for printer discovery and camera streaming
-#    network_mode: host
+    network_mode: host
     #
     # macOS/WINDOWS: Docker Desktop doesn't support host mode.
     # Comment out "network_mode: host" above and uncomment "ports:" below.
     # Note: Printer discovery won't work - add printers manually by IP.
-    ports:
-      - "${PORT:-8000}:8000"
-      - "3000:3000"                  # Virtual printer bind/detect
-      - "3002:3002"                  # Virtual printer bind/detect
-      - "8883:8883"                  # Virtual printer MQTT
-      - "990:990"                    # Virtual printer FTP control
-      - "6000:6000"                  # Virtual printer file transfer tunnel
-      - "322:322"                    # Virtual printer RTSP camera (X1/H2/P2)
-      - "2024-2026:2024-2026"        # Virtual printer proprietary ports (A1/P1S)
-      - "50000-50100:50000-50100"    # Virtual printer FTP passive data
-      - "2021:2021"
+    #ports:
+    #  - "${PORT:-8000}:8000"
+    #  - "3000:3000"                  # Virtual printer bind/detect
+    #  - "3002:3002"                  # Virtual printer bind/detect
+    #  - "8883:8883"                  # Virtual printer MQTT
+    #  - "990:990"                    # Virtual printer FTP control
+    #  - "6000:6000"                  # Virtual printer file transfer tunnel
+    #  - "322:322"                    # Virtual printer RTSP camera (X1/H2/P2)
+    #  - "2024-2026:2024-2026"        # Virtual printer proprietary ports (A1/P1S)
+    #  - "50000-50100:50000-50100"    # Virtual printer FTP passive data
     volumes:
-      - ./bambuddy_data:/app/data
-      - ./bambuddy_logs:/app/logs
+      - bambuddy_data:/app/data
+      - bambuddy_logs:/app/logs
       #
       # Share virtual printer certs with native installation
       # This ensures the slicer only needs to trust one CA certificate.
-      # - ./virtual_printer:/app/data/virtual_printer
+      - ./virtual_printer:/app/data/virtual_printer
       #
       # Mount scheduled backup output to NAS or external storage
       # Backups default to DATA_DIR/backups/ inside the data volume.
       # Uncomment to store them externally (e.g. on a NAS share).
-      # - ./bambuddy-backups:/app/data/backups
-      - ./file-manager-data:/external/prints:ro
+      #- /path/to/nas/bambuddy-backups:/app/data/backups
     environment:
       - TZ=${TZ:-Europe/Berlin}
       # Port BamBuddy runs on (default: 8000)
       # Usage: PORT=8080 docker compose up -d
       - PORT=${PORT:-8000}
-      # # Use SQLite in the Docker data volume so the DB file persists across restarts.
-      # - DATABASE_URL=sqlite+aiosqlite:///app/data/bambuddy.db
       # Virtual printer: Set to the Docker host's IP when using bridge mode (ports:).
       # Required for FTP passive mode to work behind NAT.
       # Example: VIRTUAL_PRINTER_PASV_ADDRESS=192.168.1.100
-      - VIRTUAL_PRINTER_PASV_ADDRESS=192.168.68.108
-      - VIRTUAL_PRINTER_BIND_ADDRESS=0.0.0.0
-      - VIRTUAL_PRINTER_DISABLE_SSDP=false
-      - VIRTUAL_PRINTER_HOST=192.168.68.108
-      - VIRTUAL_PRINTER_IP=192.168.68.108
-      - VP_ADVERTISE_IP=192.168.68.108
-      - VP_PUBLIC_IP=192.168.68.108
+      #- VIRTUAL_PRINTER_PASV_ADDRESS=
       #
       # External PostgreSQL (optional — uses SQLite by default)
       # Example: DATABASE_URL=postgresql+asyncpg://bambuddy:password@db-host:5432/bambuddy
