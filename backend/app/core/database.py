@@ -183,6 +183,7 @@ async def init_db():
         local_preset,
         long_lived_token,
         maintenance,
+        multi_print_template,
         notification,
         notification_template,
         oidc_provider,
@@ -1641,6 +1642,74 @@ async def run_migrations(conn):
     await _safe_execute(conn, "ALTER TABLE users ADD COLUMN cloud_token VARCHAR(500)")
     await _safe_execute(conn, "ALTER TABLE users ADD COLUMN cloud_email VARCHAR(255)")
     await _safe_execute(conn, "ALTER TABLE users ADD COLUMN cloud_region VARCHAR(10)")
+
+    # Migration: Create multi-print template tables
+    try:
+        async with conn.begin_nested():
+            await conn.execute(
+                text("""
+                CREATE TABLE IF NOT EXISTS multi_print_templates (
+                    id INTEGER PRIMARY KEY,
+                    name VARCHAR(255) NOT NULL,
+                    description TEXT,
+                    created_by_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+                    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    last_run_at DATETIME
+                )
+            """)
+            )
+            await conn.execute(
+                text("""
+                CREATE TABLE IF NOT EXISTS multi_print_template_items (
+                    id INTEGER PRIMARY KEY,
+                    template_id INTEGER NOT NULL REFERENCES multi_print_templates(id) ON DELETE CASCADE,
+                    label VARCHAR(255),
+                    archive_id INTEGER REFERENCES print_archives(id) ON DELETE SET NULL,
+                    library_file_id INTEGER REFERENCES library_files(id) ON DELETE SET NULL,
+                    plate_id INTEGER,
+                    printer_id INTEGER REFERENCES printers(id) ON DELETE SET NULL,
+                    target_model VARCHAR(50),
+                    target_location VARCHAR(100),
+                    ams_mapping TEXT,
+                    filament_overrides TEXT,
+                    scheduled_time DATETIME,
+                    require_previous_success BOOLEAN NOT NULL DEFAULT 0,
+                    auto_off_after BOOLEAN NOT NULL DEFAULT 0,
+                    manual_start BOOLEAN NOT NULL DEFAULT 0,
+                    bed_levelling BOOLEAN NOT NULL DEFAULT 1,
+                    flow_cali BOOLEAN NOT NULL DEFAULT 0,
+                    vibration_cali BOOLEAN NOT NULL DEFAULT 1,
+                    layer_inspect BOOLEAN NOT NULL DEFAULT 0,
+                    timelapse BOOLEAN NOT NULL DEFAULT 0,
+                    use_ams BOOLEAN NOT NULL DEFAULT 1,
+                    gcode_injection BOOLEAN NOT NULL DEFAULT 0,
+                    project_id INTEGER REFERENCES projects(id) ON DELETE SET NULL,
+                    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            )
+            await conn.execute(
+                text("CREATE INDEX IF NOT EXISTS ix_multi_print_templates_created_by_id ON multi_print_templates(created_by_id)")
+            )
+            await conn.execute(
+                text("CREATE INDEX IF NOT EXISTS ix_multi_print_template_items_template_id ON multi_print_template_items(template_id)")
+            )
+            await conn.execute(
+                text("CREATE INDEX IF NOT EXISTS ix_multi_print_template_items_archive_id ON multi_print_template_items(archive_id)")
+            )
+            await conn.execute(
+                text("CREATE INDEX IF NOT EXISTS ix_multi_print_template_items_library_file_id ON multi_print_template_items(library_file_id)")
+            )
+            await conn.execute(
+                text("CREATE INDEX IF NOT EXISTS ix_multi_print_template_items_printer_id ON multi_print_template_items(printer_id)")
+            )
+            await conn.execute(
+                text("CREATE INDEX IF NOT EXISTS ix_multi_print_template_items_project_id ON multi_print_template_items(project_id)")
+            )
+    except (OperationalError, ProgrammingError):
+        pass  # Already applied
 
     # Cleanup: Remove obsolete settings keys that are no longer used
     obsolete_keys = ["slicer_binary_path"]

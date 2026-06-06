@@ -919,7 +919,7 @@ export function PrintModal({
 
   return (
     <div
-      className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70"
       onClick={isSubmitting ? undefined : onClose}
     >
       <Card
@@ -954,8 +954,8 @@ export function PrintModal({
                 </>
               ) : (
                 <>
-                  <span className="block text-bambu-gray mb-1">Print Job</span>
-                  <span className="text-white font-medium truncate block">{archiveName}</span>
+                  <span className="block mb-1 text-bambu-gray">Print Job</span>
+                  <span className="block font-medium text-white truncate">{archiveName}</span>
                 </>
               )}
             </p>
@@ -1031,8 +1031,8 @@ export function PrintModal({
               const selectedPrinter = printers?.find(p => p.id === selectedPrinters[0]);
               if (selectedPrinter && selectedPrinter.model && slicedForModel !== selectedPrinter.model) {
                 return (
-                  <div className="p-3 mb-2 bg-yellow-500/10 border border-yellow-500/30 rounded-lg flex items-center gap-2">
-                    <AlertTriangle className="w-4 h-4 text-yellow-400 flex-shrink-0" />
+                  <div className="flex items-center gap-2 p-3 mb-2 border rounded-lg bg-yellow-500/10 border-yellow-500/30">
+                    <AlertTriangle className="flex-shrink-0 w-4 h-4 text-yellow-400" />
                     <span className="text-sm text-yellow-400">
                       File was sliced for {slicedForModel}, but printing on {selectedPrinter.model}
                     </span>
@@ -1044,7 +1044,7 @@ export function PrintModal({
 
             {/* Warning when archive data couldn't be loaded */}
             {archiveDataMissing && (
-              <div className="flex items-start gap-2 p-3 mb-2 bg-orange-500/10 border border-orange-500/30 rounded-lg text-sm">
+              <div className="flex items-start gap-2 p-3 mb-2 text-sm border rounded-lg bg-orange-500/10 border-orange-500/30">
                 <AlertCircle className="w-4 h-4 text-orange-400 mt-0.5 flex-shrink-0" />
                 <p className="text-orange-400">
                   Archive data unavailable. The source file may have been deleted. Filament mapping is disabled.
@@ -1083,7 +1083,7 @@ export function PrintModal({
                   max={999}
                   value={quantity}
                   onChange={(e) => setQuantity(Math.max(1, Math.min(999, parseInt(e.target.value) || 1)))}
-                  className="w-20 px-2 py-1 text-sm bg-bambu-dark border border-bambu-dark-tertiary rounded text-white focus:outline-none focus:ring-1 focus:ring-bambu-green"
+                  className="w-20 px-2 py-1 text-sm text-white border rounded bg-bambu-dark border-bambu-dark-tertiary focus:outline-none focus:ring-1 focus:ring-bambu-green"
                 />
                 {quantity > 1 && (
                   <span className="text-xs text-bambu-gray">
@@ -1095,7 +1095,7 @@ export function PrintModal({
 
             {/* Stagger option for reprint mode with multiple printers */}
             {mode === 'reprint' && assignmentMode === 'printer' && selectedPrinters.length > 1 && (
-              <div className="space-y-2 pb-2">
+              <div className="pb-2 space-y-2">
                 <div className="flex items-center gap-2">
                   <input
                     type="checkbox"
@@ -1104,7 +1104,7 @@ export function PrintModal({
                     onChange={(e) => setScheduleOptions({ ...scheduleOptions, staggerEnabled: e.target.checked })}
                     className="rounded border-bambu-dark-tertiary bg-bambu-dark text-bambu-green focus:ring-bambu-green"
                   />
-                  <label htmlFor="staggerEnabledReprint" className="text-sm flex items-center gap-1 text-bambu-gray">
+                  <label htmlFor="staggerEnabledReprint" className="flex items-center gap-1 text-sm text-bambu-gray">
                     <Layers className="w-3.5 h-3.5" />
                     {t('printModal.staggerPrinterStarts', 'Stagger printer starts')}
                   </label>
@@ -1155,7 +1155,7 @@ export function PrintModal({
                   onChange={(e) => setScheduleOptions({ ...scheduleOptions, gcodeInjection: e.target.checked })}
                   className="rounded border-bambu-dark-tertiary bg-bambu-dark text-bambu-green focus:ring-bambu-green"
                 />
-                <label htmlFor="gcodeInjectionReprint" className="text-sm flex items-center gap-1 text-bambu-gray">
+                <label htmlFor="gcodeInjectionReprint" className="flex items-center gap-1 text-sm text-bambu-gray">
                   <Code className="w-3.5 h-3.5" />
                   {t('printModal.gcodeInjection', 'Inject auto-print G-code')}
                 </label>
@@ -1164,7 +1164,7 @@ export function PrintModal({
 
             {/* Error message */}
             {updateQueueMutation.isError && (
-              <div className="mb-4 p-3 bg-red-500/20 border border-red-500/50 rounded-lg text-sm text-red-400">
+              <div className="p-3 mb-4 text-sm text-red-400 border rounded-lg bg-red-500/20 border-red-500/50">
                 {(updateQueueMutation.error as Error)?.message || 'Failed to complete operation'}
               </div>
             )}

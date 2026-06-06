@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom';
-import { Printer, Archive, Calendar, BarChart3, Cloud, Settings, Sun, Moon, ChevronLeft, ChevronRight, Keyboard, Github, GripVertical, ArrowUpCircle, Wrench, FolderKanban, FolderOpen, X, Menu, Info, Plug, Bug, LogOut, Key, Loader2, Disc3, ShieldAlert, Bell, Globe, type LucideIcon } from 'lucide-react';
+import { Printer, Archive, Calendar, BarChart3, Cloud, Settings, Sun, Moon, ChevronLeft, ChevronRight, Keyboard, Github, GripVertical, ArrowUpCircle, Wrench, FolderKanban, FolderOpen, X, Menu, Info, Plug, Bug, LogOut, Key, Loader2, Disc3, ShieldAlert, Bell, Globe, ListTodo, type LucideIcon } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useTheme } from '../contexts/ThemeContext';
 import { KeyboardShortcutsModal } from './KeyboardShortcutsModal';
@@ -30,6 +30,7 @@ export const defaultNavItems: NavItem[] = [
   { id: 'printers', to: '/', icon: Printer, labelKey: 'nav.printers' },
   { id: 'archives', to: '/archives', icon: Archive, labelKey: 'nav.archives' },
   { id: 'queue', to: '/queue', icon: Calendar, labelKey: 'nav.queue' },
+  { id: 'multiPrintTemplates', to: '/multi-print-templates', icon: ListTodo, labelKey: 'nav.multiPrintTemplates' },
   { id: 'stats', to: '/stats', icon: BarChart3, labelKey: 'nav.stats' },
   { id: 'profiles', to: '/profiles', icon: Cloud, labelKey: 'nav.profiles' },
   { id: 'maintenance', to: '/maintenance', icon: Wrench, labelKey: 'nav.maintenance' },
@@ -278,6 +279,7 @@ export function Layout() {
     const navPermissions: Record<string, Permission> = {
       archives: 'archives:read',
       queue: 'queue:read',
+      multiPrintTemplates: 'queue:read',
       stats: 'stats:read',
       profiles: 'kprofiles:read',
       maintenance: 'maintenance:read',
@@ -569,16 +571,16 @@ export function Layout() {
                         title={!isSidebarCompact && !sidebarExpanded ? link.name : undefined}
                       >
                         {sidebarExpanded && !isSidebarCompact && (
-                          <GripVertical className="w-4 h-4 flex-shrink-0 opacity-0 group-hover:opacity-50 cursor-grab active:cursor-grabbing -ml-1" />
+                          <GripVertical className="w-4 h-4 shrink-0 opacity-0 group-hover:opacity-50 cursor-grab active:cursor-grabbing -ml-1" />
                         )}
                         {link.custom_icon ? (
                           <img
                             src={api.getExternalLinkIconUrl(link.id)}
                             alt=""
-                            className="w-5 h-5 flex-shrink-0"
+                            className="w-5 h-5 shrink-0"
                           />
                         ) : (
-                          LinkIcon && <LinkIcon className="w-5 h-5 flex-shrink-0" />
+                          LinkIcon && <LinkIcon className="w-5 h-5 shrink-0" />
                         )}
                         {(isSidebarCompact || sidebarExpanded) && <span>{link.name}</span>}
                       </a>
@@ -595,16 +597,16 @@ export function Layout() {
                         title={!isSidebarCompact && !sidebarExpanded ? link.name : undefined}
                       >
                         {sidebarExpanded && !isSidebarCompact && (
-                          <GripVertical className="w-4 h-4 flex-shrink-0 opacity-0 group-hover:opacity-50 cursor-grab active:cursor-grabbing -ml-1" />
+                          <GripVertical className="w-4 h-4 shrink-0 opacity-0 group-hover:opacity-50 cursor-grab active:cursor-grabbing -ml-1" />
                         )}
                         {link.custom_icon ? (
                           <img
                             src={api.getExternalLinkIconUrl(link.id)}
                             alt=""
-                            className="w-5 h-5 flex-shrink-0"
+                            className="w-5 h-5 shrink-0"
                           />
                         ) : (
-                          LinkIcon && <LinkIcon className="w-5 h-5 flex-shrink-0" />
+                          LinkIcon && <LinkIcon className="w-5 h-5 shrink-0" />
                         )}
                         {(isSidebarCompact || sidebarExpanded) && <span>{link.name}</span>}
                       </NavLink>
@@ -652,10 +654,10 @@ export function Layout() {
                       title={!isSidebarCompact && !sidebarExpanded ? t(labelKey) : undefined}
                     >
                       {sidebarExpanded && !isSidebarCompact && (
-                        <GripVertical className="w-4 h-4 flex-shrink-0 opacity-0 group-hover:opacity-50 cursor-grab active:cursor-grabbing -ml-1" />
+                        <GripVertical className="w-4 h-4 shrink-0 opacity-0 group-hover:opacity-50 cursor-grab active:cursor-grabbing -ml-1" />
                       )}
                       <div className="relative">
-                        <Icon className="w-5 h-5 flex-shrink-0" />
+                        <Icon className="w-5 h-5 shrink-0" />
                         {showClearPlateDot && (
                           <span className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 bg-yellow-500 rounded-full border-2 border-bambu-dark-secondary" />
                         )}
@@ -692,7 +694,7 @@ export function Layout() {
         )}
 
         {/* Footer */}
-        <div className="flex-shrink-0 p-2 border-t border-bambu-dark-tertiary">
+        <div className="shrink-0 p-2 border-t border-bambu-dark-tertiary">
           {isSidebarCompact || sidebarExpanded ? (
             <div className="flex flex-col gap-2 px-2">
               {/* Top row: icons */}
@@ -975,7 +977,7 @@ export function Layout() {
 
       {/* Plate Detection Alert Modal */}
       {plateDetectionAlert && (
-        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-[100] p-4">
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-100 p-4">
           <div className="bg-bambu-dark-secondary border-2 border-yellow-500 rounded-xl shadow-2xl max-w-md w-full animate-in fade-in zoom-in duration-200">
             <div className="p-6 text-center">
               <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-yellow-500/20 flex items-center justify-center">

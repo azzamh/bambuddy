@@ -85,3 +85,6 @@ advertisements/
 gitleaks-report.json
 
 file-manager-data/*
+
+# Large data files
+bambuddy_data/archive.zip

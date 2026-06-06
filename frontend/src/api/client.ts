@@ -1743,6 +1743,68 @@ export interface PrintQueueItemUpdate {
   gcode_injection?: boolean;
 }
 
+export interface MultiPrintTemplateItem {
+  id: number;
+  template_id: number;
+  label: string | null;
+  archive_id: number | null;
+  library_file_id: number | null;
+  plate_id: number | null;
+  printer_id: number | null;
+  target_model: string | null;
+  target_location: string | null;
+  ams_mapping: number[] | null;
+  filament_overrides: Array<{ slot_id: number; type: string; color: string; color_name?: string; force_color_match?: boolean }> | null;
+  scheduled_time: string | null;
+  require_previous_success: boolean;
+  auto_off_after: boolean;
+  manual_start: boolean;
+  bed_levelling: boolean;
+  flow_cali: boolean;
+  vibration_cali: boolean;
+  layer_inspect: boolean;
+  timelapse: boolean;
+  use_ams: boolean;
+  gcode_injection: boolean;
+  project_id: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface MultiPrintTemplate {
+  id: number;
+  name: string;
+  description: string | null;
+  created_by_id: number | null;
+  created_at: string;
+  updated_at: string;
+  last_run_at: string | null;
+  items: MultiPrintTemplateItem[];
+}
+
+export interface MultiPrintTemplateCreate {
+  name: string;
+  description?: string | null;
+  items: Array<Omit<MultiPrintTemplateItem, 'id' | 'template_id' | 'created_at' | 'updated_at'>>;
+}
+
+export interface MultiPrintTemplateUpdate {
+  name?: string | null;
+  description?: string | null;
+  items?: Array<Omit<MultiPrintTemplateItem, 'id' | 'template_id' | 'created_at' | 'updated_at'>>;
+}
+
+export interface MultiPrintTemplateRunRequest {
+  scheduled_time?: string | null;
+  override_printer_id?: number | null;
+  override_target_model?: string | null;
+}
+
+export interface MultiPrintTemplateRunResponse {
+  created_queue_ids: number[];
+  failed_items: Array<{ index: number; reason: string }>;
+}
+
 export interface PrintQueueBulkUpdate {
   item_ids: number[];
   printer_id?: number | null;
@@ -4220,6 +4282,27 @@ export const api = {
   bulkUpdateQueue: (data: PrintQueueBulkUpdate) =>
     request<PrintQueueBulkUpdateResponse>('/queue/bulk', {
       method: 'PATCH',
+      body: JSON.stringify(data),
+    }),
+
+  // Multi-Print Templates
+  getMultiPrintTemplates: () => request<MultiPrintTemplate[]>('/multi-print-templates/'),
+  getMultiPrintTemplate: (id: number) => request<MultiPrintTemplate>(`/multi-print-templates/${id}`),
+  createMultiPrintTemplate: (data: MultiPrintTemplateCreate) =>
+    request<MultiPrintTemplate>('/multi-print-templates/', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  updateMultiPrintTemplate: (id: number, data: MultiPrintTemplateUpdate) =>
+    request<MultiPrintTemplate>(`/multi-print-templates/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    }),
+  deleteMultiPrintTemplate: (id: number) =>
+    request<{ message: string }>(`/multi-print-templates/${id}`, { method: 'DELETE' }),
+  runMultiPrintTemplate: (id: number, data: MultiPrintTemplateRunRequest) =>
+    request<MultiPrintTemplateRunResponse>(`/multi-print-templates/${id}/run`, {
+      method: 'POST',
       body: JSON.stringify(data),
     }),
   // Batches

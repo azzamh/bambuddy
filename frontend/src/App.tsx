@@ -17,6 +17,7 @@ import { CameraPage } from './pages/CameraPage';
 import { StreamOverlayPage } from './pages/StreamOverlayPage';
 import { ExternalLinkPage } from './pages/ExternalLinkPage';
 import { GroupEditPage } from './pages/GroupEditPage';
+import { MultiPrintTemplatesPage } from './pages/MultiPrintTemplatesPage';
 import InventoryPage from './pages/InventoryPage';
 import { MakerworldPage } from './pages/MakerworldPage';
 import { SystemInfoPage } from './pages/SystemInfoPage';
@@ -194,6 +195,7 @@ function App() {
                   <Route path="maintenance" element={<MaintenancePage />} />
                   <Route path="projects" element={<ProjectsPage />} />
                   <Route path="projects/:id" element={<ProjectDetailPage />} />
+                  <Route path="multi-print-templates" element={<PermissionRoute permission="queue:read"><MultiPrintTemplatesPage /></PermissionRoute>} />
                   <Route path="inventory" element={<InventoryPage />} />
                   <Route path="files" element={<FileManagerPage />} />
                   <Route path="files/trash" element={<LibraryTrashPage />} />

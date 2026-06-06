@@ -88,21 +88,21 @@ function NewFolderModal({ parentId, onClose, onSave, isLoading, t }: NewFolderMo
   };
 
   return (
-    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
-      <div className="bg-bambu-dark-secondary rounded-lg w-full max-w-sm border border-bambu-dark-tertiary">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70">
+      <div className="w-full max-w-sm border rounded-lg bg-bambu-dark-secondary border-bambu-dark-tertiary">
         <div className="p-4 border-b border-bambu-dark-tertiary">
           <h2 className="text-lg font-semibold text-white">{t('fileManager.newFolder')}</h2>
         </div>
         <form onSubmit={handleSubmit} className="p-4 space-y-4">
           <div>
-            <label className="block text-sm font-medium text-white mb-1">
+            <label className="block mb-1 text-sm font-medium text-white">
               {t('fileManager.folderName')}
             </label>
             <input
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              className="w-full bg-bambu-dark border border-bambu-dark-tertiary rounded px-3 py-2 text-white placeholder-bambu-gray focus:outline-none focus:border-bambu-green"
+              className="w-full px-3 py-2 text-white border rounded bg-bambu-dark border-bambu-dark-tertiary placeholder-bambu-gray focus:outline-none focus:border-bambu-green"
               placeholder={t('fileManager.folderNamePlaceholder')}
               autoFocus
               required
@@ -147,43 +147,43 @@ function ExternalFolderModal({ onClose, onSave, isLoading, t }: ExternalFolderMo
   };
 
   return (
-    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
-      <div className="bg-bambu-dark-secondary rounded-lg w-full max-w-md border border-bambu-dark-tertiary">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70">
+      <div className="w-full max-w-md border rounded-lg bg-bambu-dark-secondary border-bambu-dark-tertiary">
         <div className="p-4 border-b border-bambu-dark-tertiary">
-          <h2 className="text-lg font-semibold text-white flex items-center gap-2">
+          <h2 className="flex items-center gap-2 text-lg font-semibold text-white">
             <FolderSymlink className="w-5 h-5 text-bambu-green" />
             {t('fileManager.linkExternalFolder')}
           </h2>
-          <p className="text-sm text-bambu-gray mt-1">{t('fileManager.linkExternalFolderDescription')}</p>
+          <p className="mt-1 text-sm text-bambu-gray">{t('fileManager.linkExternalFolderDescription')}</p>
         </div>
         <form onSubmit={handleSubmit} className="p-4 space-y-4">
           <div>
-            <label className="block text-sm font-medium text-white mb-1">
+            <label className="block mb-1 text-sm font-medium text-white">
               {t('fileManager.folderName')}
             </label>
             <input
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              className="w-full bg-bambu-dark border border-bambu-dark-tertiary rounded px-3 py-2 text-white placeholder-bambu-gray focus:outline-none focus:border-bambu-green"
+              className="w-full px-3 py-2 text-white border rounded bg-bambu-dark border-bambu-dark-tertiary placeholder-bambu-gray focus:outline-none focus:border-bambu-green"
               placeholder={t('fileManager.externalFolderNamePlaceholder')}
               autoFocus
               required
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-white mb-1">
+            <label className="block mb-1 text-sm font-medium text-white">
               {t('fileManager.externalPath')}
             </label>
             <input
               type="text"
               value={path}
               onChange={(e) => setPath(e.target.value)}
-              className="w-full bg-bambu-dark border border-bambu-dark-tertiary rounded px-3 py-2 text-white placeholder-bambu-gray focus:outline-none focus:border-bambu-green font-mono text-sm"
+              className="w-full px-3 py-2 font-mono text-sm text-white border rounded bg-bambu-dark border-bambu-dark-tertiary placeholder-bambu-gray focus:outline-none focus:border-bambu-green"
               placeholder="/mnt/nas/3d-prints"
               required
             />
-            <p className="text-xs text-bambu-gray mt-1">{t('fileManager.externalPathHelp')}</p>
+            <p className="mt-1 text-xs text-bambu-gray">{t('fileManager.externalPathHelp')}</p>
           </div>
           <div className="space-y-2">
             <label className="flex items-center gap-2 cursor-pointer">
@@ -246,27 +246,27 @@ function RenameModal({ type, currentName, onClose, onSave, isLoading, t }: Renam
   };
 
   return (
-    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
-      <div className="bg-bambu-dark-secondary rounded-lg w-full max-w-sm border border-bambu-dark-tertiary">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70">
+      <div className="w-full max-w-sm border rounded-lg bg-bambu-dark-secondary border-bambu-dark-tertiary">
         <div className="p-4 border-b border-bambu-dark-tertiary">
           <h2 className="text-lg font-semibold text-white">{type === 'file' ? t('fileManager.renameFile') : t('fileManager.renameFolder')}</h2>
         </div>
         <form onSubmit={handleSubmit} className="p-4 space-y-4">
           <div>
-            <label className="block text-sm font-medium text-white mb-1">
+            <label className="block mb-1 text-sm font-medium text-white">
               {t('common.name')}
             </label>
-            <div className="flex items-center bg-bambu-dark border border-bambu-dark-tertiary rounded focus-within:border-bambu-green">
+            <div className="flex items-center border rounded bg-bambu-dark border-bambu-dark-tertiary focus-within:border-bambu-green">
               <input
                 type="text"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                className="flex-1 bg-transparent px-3 py-2 text-white placeholder-bambu-gray focus:outline-none min-w-0"
+                className="flex-1 min-w-0 px-3 py-2 text-white bg-transparent placeholder-bambu-gray focus:outline-none"
                 autoFocus
                 required
               />
               {fileExtension && (
-                <span className="pr-3 text-bambu-gray text-sm select-none whitespace-nowrap">{fileExtension}</span>
+                <span className="pr-3 text-sm select-none text-bambu-gray whitespace-nowrap">{fileExtension}</span>
               )}
             </div>
           </div>
@@ -312,13 +312,13 @@ function MoveFilesModal({ folders, selectedFiles, currentFolderId, onClose, onMo
   const flatFolders = [{ id: null, name: t('fileManager.rootNoFolder'), depth: 0 }, ...flattenFolders(folders)];
 
   return (
-    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
-      <div className="bg-bambu-dark-secondary rounded-lg w-full max-w-sm border border-bambu-dark-tertiary">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70">
+      <div className="w-full max-w-sm border rounded-lg bg-bambu-dark-secondary border-bambu-dark-tertiary">
         <div className="p-4 border-b border-bambu-dark-tertiary">
           <h2 className="text-lg font-semibold text-white">{t('fileManager.moveFiles', { count: selectedFiles.length })}</h2>
         </div>
         <div className="p-4 space-y-4">
-          <div className="max-h-64 overflow-y-auto space-y-1">
+          <div className="space-y-1 overflow-y-auto max-h-64">
             {flatFolders.map((folder) => (
               <button
                 key={folder.id ?? 'root'}
@@ -335,7 +335,7 @@ function MoveFilesModal({ folders, selectedFiles, currentFolderId, onClose, onMo
               >
                 <FolderOpen className="w-4 h-4" />
                 {folder.name}
-                {folder.id === currentFolderId && <span className="text-xs text-bambu-gray ml-auto">({t('fileManager.current')})</span>}
+                {folder.id === currentFolderId && <span className="ml-auto text-xs text-bambu-gray">({t('fileManager.current')})</span>}
               </button>
             ))}
           </div>
@@ -408,14 +408,14 @@ function LinkFolderModal({ folder, onClose, onLink, isLoading, t }: LinkFolderMo
   const isLinked = folder.project_id || folder.archive_id;
 
   return (
-    <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
-      <div className="bg-bambu-dark-secondary rounded-lg w-full max-w-md border border-bambu-dark-tertiary">
-        <div className="p-4 border-b border-bambu-dark-tertiary flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-white flex items-center gap-2">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70">
+      <div className="w-full max-w-md border rounded-lg bg-bambu-dark-secondary border-bambu-dark-tertiary">
+        <div className="flex items-center justify-between p-4 border-b border-bambu-dark-tertiary">
+          <h2 className="flex items-center gap-2 text-lg font-semibold text-white">
             <Link2 className="w-5 h-5 text-bambu-green" />
             {t('fileManager.linkFolder')}
           </h2>
-          <button onClick={onClose} className="p-1 hover:bg-bambu-dark rounded">
+          <button onClick={onClose} className="p-1 rounded hover:bg-bambu-dark">
             <X className="w-5 h-5 text-bambu-gray" />
           </button>
         </div>
@@ -452,7 +452,7 @@ function LinkFolderModal({ folder, onClose, onLink, isLoading, t }: LinkFolderMo
           </div>
 
           {/* Selection list */}
-          <div className="max-h-64 overflow-y-auto space-y-1 bg-bambu-dark rounded-lg p-2">
+          <div className="p-2 space-y-1 overflow-y-auto rounded-lg max-h-64 bg-bambu-dark">
             {linkType === 'project' ? (
               projects && projects.length > 0 ? (
                 projects.map((project) => (
@@ -466,14 +466,14 @@ function LinkFolderModal({ folder, onClose, onLink, isLoading, t }: LinkFolderMo
                     }`}
                   >
                     <div
-                      className="w-3 h-3 rounded-full flex-shrink-0"
+                      className="flex-shrink-0 w-3 h-3 rounded-full"
                       style={{ backgroundColor: project.color || '#00ae42' }}
                     />
                     <span className="truncate">{project.name}</span>
                   </button>
                 ))
               ) : (
-                <p className="text-sm text-bambu-gray text-center py-4">{t('fileManager.noProjectsFound')}</p>
+                <p className="py-4 text-sm text-center text-bambu-gray">{t('fileManager.noProjectsFound')}</p>
               )
             ) : (
               archives && archives.length > 0 ? (
@@ -487,18 +487,18 @@ function LinkFolderModal({ folder, onClose, onLink, isLoading, t }: LinkFolderMo
                         : 'hover:bg-bambu-dark-tertiary text-white'
                     }`}
                   >
-                    <FileBox className="w-4 h-4 text-bambu-gray flex-shrink-0" />
+                    <FileBox className="flex-shrink-0 w-4 h-4 text-bambu-gray" />
                     <span className="truncate">{archive.print_name || archive.filename}</span>
                   </button>
                 ))
               ) : (
-                <p className="text-sm text-bambu-gray text-center py-4">{t('fileManager.noArchivesFound')}</p>
+                <p className="py-4 text-sm text-center text-bambu-gray">{t('fileManager.noArchivesFound')}</p>
               )
             )}
           </div>
         </div>
 
-        <div className="p-4 border-t border-bambu-dark-tertiary flex justify-between">
+        <div className="flex justify-between p-4 border-t border-bambu-dark-tertiary">
           {isLinked && (
             <Button variant="danger" onClick={handleUnlink} disabled={isLoading}>
               <Unlink className="w-4 h-4 mr-2" />
@@ -566,9 +566,9 @@ function FolderTreeItem({ folder, selectedFolderId, onSelect, onDelete, onLink, 
           <div className="w-4.5" />
         )}
         {isExternal ? (
-          <FolderSymlink className="w-4 h-4 text-purple-400 flex-shrink-0" />
+          <FolderSymlink className="flex-shrink-0 w-4 h-4 text-purple-400" />
         ) : (
-          <FolderOpen className="w-4 h-4 text-bambu-green flex-shrink-0" />
+          <FolderOpen className="flex-shrink-0 w-4 h-4 text-bambu-green" />
         )}
         <span className={`text-sm flex-1 min-w-0 ${wrapNames ? 'break-all' : 'truncate'}`} title={folder.name}>{folder.name}</span>
         {/* Link indicator - clickable to change link */}
@@ -589,7 +589,7 @@ function FolderTreeItem({ folder, selectedFolderId, onSelect, onDelete, onLink, 
         {/* Read-only indicator for external folders */}
         {isExternal && folder.external_readonly && (
           <span title={t('fileManager.readOnly')}>
-            <Lock className="w-3 h-3 text-amber-400 flex-shrink-0" />
+            <Lock className="flex-shrink-0 w-3 h-3 text-amber-400" />
           </span>
         )}
         {folder.file_count > 0 && (
@@ -729,12 +729,12 @@ function FileCard({ file, isSelected, isMobile, onSelect, onDelete, onDownload, 
       onClick={() => onSelect(file.id)}
     >
       {/* Thumbnail */}
-      <div className="aspect-square bg-bambu-dark flex items-center justify-center overflow-hidden">
+      <div className="flex items-center justify-center overflow-hidden aspect-square bg-bambu-dark">
         {file.thumbnail_path ? (
           <img
             src={`${api.getLibraryFileThumbnailUrl(file.id)}${thumbnailVersion ? ((api.getLibraryFileThumbnailUrl(file.id).includes('?') ? '&' : '?') + `v=${thumbnailVersion}`) : ''}`}
             alt={file.filename}
-            className="w-full h-full object-cover"
+            className="object-cover w-full h-full"
           />
         ) : (
           <FileBox className="w-12 h-12 text-bambu-gray/30" />
@@ -765,7 +765,7 @@ function FileCard({ file, isSelected, isMobile, onSelect, onDelete, onDownload, 
           )}
         </div>
         {file.sliced_for_model && (
-          <div className="mt-1 text-xs text-bambu-gray flex items-center gap-1">
+          <div className="flex items-center gap-1 mt-1 text-xs text-bambu-gray">
             <Printer className="w-3 h-3" />
             {file.sliced_for_model}
           </div>
@@ -776,7 +776,7 @@ function FileCard({ file, isSelected, isMobile, onSelect, onDelete, onDownload, 
           </div>
         )}
         {authEnabled && file.created_by_username && (
-          <div className="mt-1 text-xs text-bambu-gray flex items-center gap-1">
+          <div className="flex items-center gap-1 mt-1 text-xs text-bambu-gray">
             <User className="w-3 h-3" />
             {file.created_by_username}
           </div>
@@ -999,6 +999,7 @@ export function FileManagerPage() {
 
   // Filter and sort state (persist sort preferences to localStorage)
   const [searchQuery, setSearchQuery] = useState('');
+  const [folderSearch, setFolderSearch] = useState('');
   const [filterType, setFilterType] = useState<string>('all');
   const [filterUsername, setFilterUsername] = useState('');
   const [sortField, setSortField] = useState<SortField>(() => {
@@ -1069,6 +1070,25 @@ export function FileManagerPage() {
     const types = new Set(files.map((f) => f.file_type));
     return Array.from(types).sort();
   }, [files]);
+
+  // Recursively filter folder tree by folderSearch
+  const filterFolders = useCallback((items: LibraryFolderTree[]): LibraryFolderTree[] => {
+    if (!folderSearch.trim()) return items;
+    const q = folderSearch.toLowerCase();
+    return items.reduce<LibraryFolderTree[]>((acc, folder) => {
+      const nameMatch = folder.name.toLowerCase().includes(q);
+      const filteredChildren = filterFolders(folder.children);
+      if (nameMatch || filteredChildren.length > 0) {
+        acc.push({ ...folder, children: filteredChildren });
+      }
+      return acc;
+    }, []);
+  }, [folderSearch]);
+
+  const filteredFolders = useMemo(() => {
+    if (!folders) return [];
+    return filterFolders(folders);
+  }, [folders, filterFolders]);
 
   // Filter and sort files
   const filteredAndSortedFiles = useMemo(() => {
@@ -1407,21 +1427,21 @@ export function FileManagerPage() {
   return (
     <div className="p-4 md:p-8 min-h-[calc(100vh-64px)] lg:h-[calc(100vh-64px)] flex flex-col">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+      <div className="flex flex-col justify-between gap-4 mb-6 sm:flex-row sm:items-center">
         <div>
-          <h1 className="text-2xl font-bold text-white flex items-center gap-3">
+          <h1 className="flex items-center gap-3 text-2xl font-bold text-white">
             <div className="p-2.5 bg-bambu-green/10 rounded-xl">
               <FolderOpen className="w-6 h-6 text-bambu-green" />
             </div>
             {t('fileManager.title')}
           </h1>
-          <p className="text-sm text-bambu-gray mt-2 ml-14">
+          <p className="mt-2 text-sm text-bambu-gray ml-14">
             {t('fileManager.subtitle')}
           </p>
         </div>
         <div className="flex items-center gap-2">
           {/* View mode toggle */}
-          <div className="flex items-center bg-bambu-dark rounded-lg p-1">
+          <div className="flex items-center p-1 rounded-lg bg-bambu-dark">
             <button
               onClick={() => handleViewModeChange('grid')}
               className={`p-1.5 rounded transition-colors ${
@@ -1510,10 +1530,10 @@ export function FileManagerPage() {
 
       {/* Disk space warning */}
       {isDiskSpaceLow && stats && settings && (
-        <div className="flex items-center gap-3 mb-4 p-3 bg-amber-500/10 border border-amber-500/30 rounded-lg">
-          <AlertTriangle className="w-5 h-5 text-amber-500 flex-shrink-0" />
+        <div className="flex items-center gap-3 p-3 mb-4 border rounded-lg bg-amber-500/10 border-amber-500/30">
+          <AlertTriangle className="flex-shrink-0 w-5 h-5 text-amber-500" />
           <div className="flex-1">
-            <p className="text-sm text-amber-500 font-medium">{t('fileManager.lowDiskSpaceWarning')}</p>
+            <p className="text-sm font-medium text-amber-500">{t('fileManager.lowDiskSpaceWarning')}</p>
             <p className="text-xs text-amber-500/80">
               {t('fileManager.lowDiskSpaceDetails', { free: formatFileSize(stats.disk_free_bytes), total: formatFileSize(stats.disk_total_bytes), threshold: settings.library_disk_warning_gb })}
             </p>
@@ -1523,21 +1543,21 @@ export function FileManagerPage() {
 
       {/* Stats bar */}
       {stats && (
-        <div className="flex flex-wrap items-center gap-3 sm:gap-6 mb-6 p-3 bg-bambu-dark-secondary rounded-lg border border-bambu-dark-tertiary">
+        <div className="flex flex-wrap items-center gap-3 p-3 mb-6 border rounded-lg sm:gap-6 bg-bambu-dark-secondary border-bambu-dark-tertiary">
           <div className="flex items-center gap-2 text-sm">
             <File className="w-4 h-4 text-bambu-green" />
             <span className="text-bambu-gray">{t('fileManager.files')}:</span>
-            <span className="text-white font-medium">{stats.total_files}</span>
+            <span className="font-medium text-white">{stats.total_files}</span>
           </div>
           <div className="flex items-center gap-2 text-sm">
             <FolderOpen className="w-4 h-4 text-blue-400" />
             <span className="text-bambu-gray">{t('fileManager.folders')}:</span>
-            <span className="text-white font-medium">{stats.total_folders}</span>
+            <span className="font-medium text-white">{stats.total_folders}</span>
           </div>
           <div className="flex items-center gap-2 text-sm">
             <HardDrive className="w-4 h-4 text-amber-400" />
             <span className="text-bambu-gray">{t('fileManager.size')}:</span>
-            <span className="text-white font-medium">{formatFileSize(stats.total_size_bytes)}</span>
+            <span className="font-medium text-white">{formatFileSize(stats.total_size_bytes)}</span>
           </div>
           <div className="flex items-center gap-2 text-sm sm:ml-auto">
             <span className="text-bambu-gray">{t('fileManager.free')}:</span>
@@ -1549,7 +1569,7 @@ export function FileManagerPage() {
       )}
 
       {/* Main content */}
-      <div className="flex-1 flex flex-col lg:flex-row gap-4 lg:gap-6 min-h-0">
+      <div className="flex flex-col flex-1 min-h-0 gap-4 lg:flex-row lg:gap-6">
         {/* Mobile folder selector */}
         <div className="lg:hidden">
           <select
@@ -1582,7 +1602,7 @@ export function FileManagerPage() {
         {/* Folder sidebar - resizable, hidden on mobile */}
         <div
           ref={sidebarRef}
-          className="hidden lg:flex flex-shrink-0 bg-bambu-dark-secondary rounded-lg border border-bambu-dark-tertiary overflow-hidden flex-col relative"
+          className="relative flex-col flex-shrink-0 hidden overflow-hidden border rounded-lg lg:flex bg-bambu-dark-secondary border-bambu-dark-tertiary"
           style={{ width: `${sidebarWidth}px` }}
         >
           {/* Resize handle - drag to resize, double-click to reset */}
@@ -1607,7 +1627,7 @@ export function FileManagerPage() {
               <div className="w-0.5 h-0.5 rounded-full bg-white/70" />
             </div>
           </div>
-          <div className="p-3 border-b border-bambu-dark-tertiary flex items-center justify-between">
+          <div className="flex items-center justify-between p-3 border-b border-bambu-dark-tertiary">
             <h2 className="text-sm font-medium text-white">{t('fileManager.folders')}</h2>
             <div className="flex items-center gap-1">
               <button
@@ -1642,7 +1662,20 @@ export function FileManagerPage() {
               </button>
             </div>
           </div>
-          <div className="flex-1 overflow-y-auto p-2">
+          {/* Folder search */}
+          <div className="px-3 pt-2 pb-2">
+            <div className="relative">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-bambu-gray" />
+              <input
+                type="text"
+                placeholder="Search folders..."
+                value={folderSearch}
+                onChange={(e) => setFolderSearch(e.target.value)}
+                className="w-full pl-8 pr-3 py-1.5 bg-bambu-dark border border-bambu-dark-tertiary rounded text-sm text-white placeholder-bambu-gray focus:outline-none focus:border-bambu-green"
+              />
+            </div>
+          </div>
+          <div className="flex-1 p-2 overflow-y-auto">
             {/* All Files (root) */}
             <div
               className={`flex items-center gap-2 px-2 py-1.5 rounded cursor-pointer transition-colors ${
@@ -1659,7 +1692,7 @@ export function FileManagerPage() {
             {/* Folder tree — re-key on the collapse toggle so flipping it
                 remounts every FolderTreeItem, which re-reads defaultExpanded
                 and makes the preference take effect immediately. */}
-            {folders?.map((folder) => (
+            {filteredFolders?.map((folder) => (
               <FolderTreeItem
                 key={`${folder.id}-${collapseFoldersByDefault ? 'c' : 'e'}`}
                 folder={folder}
@@ -1674,15 +1707,20 @@ export function FileManagerPage() {
                 t={t}
               />
             ))}
+            {filteredFolders?.length === 0 && folderSearch.trim() && (
+              <div className="px-2 py-3 text-sm text-center text-bambu-gray">
+                No matching folders
+              </div>
+            )}
           </div>
         </div>
 
         {/* Files area */}
-        <div className="flex-1 flex flex-col min-w-0 min-h-0">
+        <div className="flex flex-col flex-1 min-w-0 min-h-0">
           {/* External folder info bar */}
           {selectedFolder?.is_external && (
-            <div className="flex items-center gap-3 mb-4 p-3 bg-purple-500/10 border border-purple-500/30 rounded-lg">
-              <FolderSymlink className="w-5 h-5 text-purple-400 flex-shrink-0" />
+            <div className="flex items-center gap-3 p-3 mb-4 border rounded-lg bg-purple-500/10 border-purple-500/30">
+              <FolderSymlink className="flex-shrink-0 w-5 h-5 text-purple-400" />
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
                   <span className="text-sm font-medium text-purple-300">{t('fileManager.externalFolder')}</span>
@@ -1693,7 +1731,7 @@ export function FileManagerPage() {
                     </span>
                   )}
                 </div>
-                <p className="text-xs text-bambu-gray truncate font-mono" title={selectedFolder.external_path || ''}>
+                <p className="font-mono text-xs truncate text-bambu-gray" title={selectedFolder.external_path || ''}>
                   {selectedFolder.external_path}
                 </p>
               </div>
@@ -1715,10 +1753,10 @@ export function FileManagerPage() {
           )}
           {/* Search, Filter, Sort toolbar - sticky on mobile for easier access */}
           {files && files.length > 0 && (
-            <div className="flex flex-wrap items-center gap-2 sm:gap-3 mb-4 p-2 sm:p-3 bg-bambu-dark-secondary rounded-lg border border-bambu-dark-tertiary sticky top-0 z-10 lg:static">
+            <div className="sticky top-0 z-10 flex flex-wrap items-center gap-2 p-2 mb-4 border rounded-lg sm:gap-3 sm:p-3 bg-bambu-dark-secondary border-bambu-dark-tertiary lg:static">
               {/* Search */}
               <div className="relative w-full sm:w-auto sm:flex-1 sm:max-w-xs">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-bambu-gray" />
+                <Search className="absolute w-4 h-4 -translate-y-1/2 left-3 top-1/2 text-bambu-gray" />
                 <input
                   type="text"
                   placeholder={t('fileManager.searchFiles')}
@@ -1730,7 +1768,7 @@ export function FileManagerPage() {
 
               {/* Type filter */}
               <div className="flex items-center gap-2">
-                <Filter className="w-4 h-4 text-bambu-gray hidden sm:block" />
+                <Filter className="hidden w-4 h-4 text-bambu-gray sm:block" />
                 <select
                   value={filterType}
                   onChange={(e) => setFilterType(e.target.value)}
@@ -1760,7 +1798,7 @@ export function FileManagerPage() {
                   {filterUsername && (
                     <button
                       onClick={() => setFilterUsername('')}
-                      className="absolute right-2 top-1/2 -translate-y-1/2 text-bambu-gray hover:text-white z-10"
+                      className="absolute z-10 -translate-y-1/2 right-2 top-1/2 text-bambu-gray hover:text-white"
                     >
                       <X className="w-3 h-3" />
                     </button>
@@ -1809,7 +1847,7 @@ export function FileManagerPage() {
 
               {/* Results count */}
               {(searchQuery || filterType !== 'all' || filterUsername) && (
-                <span className="text-sm text-bambu-gray hidden sm:inline">
+                <span className="hidden text-sm text-bambu-gray sm:inline">
                   {t('fileManager.resultsCount', { showing: filteredAndSortedFiles.length, total: files.length })}
                 </span>
               )}
@@ -1842,11 +1880,11 @@ export function FileManagerPage() {
 
               {selectedFiles.length > 0 && (
                 <>
-                  <span className="text-sm text-bambu-gray ml-2">
+                  <span className="ml-2 text-sm text-bambu-gray">
                     {t('fileManager.selected', { count: selectedFiles.length })}
                   </span>
-                  <div className="hidden sm:block flex-1" />
-                  <div className="w-full sm:w-auto flex flex-wrap items-center gap-2 mt-2 sm:mt-0">
+                  <div className="flex-1 hidden sm:block" />
+                  <div className="flex flex-wrap items-center w-full gap-2 mt-2 sm:w-auto sm:mt-0">
                     {selectedSlicedFiles.length === 1 && (
                       <Button
                         variant="primary"
@@ -1916,21 +1954,21 @@ export function FileManagerPage() {
 
           {/* File grid/list */}
           {isLoading ? (
-            <div className="flex-1 flex items-center justify-center">
+            <div className="flex items-center justify-center flex-1">
               <div className="flex flex-col items-center gap-3">
                 <Loader2 className="w-8 h-8 animate-spin text-bambu-green" />
                 <p className="text-sm text-bambu-gray">{t('fileManager.loadingFiles')}</p>
               </div>
             </div>
           ) : files?.length === 0 ? (
-            <div className="flex-1 flex flex-col items-center justify-center">
-              <div className="p-4 bg-bambu-dark rounded-2xl mb-4">
+            <div className="flex flex-col items-center justify-center flex-1">
+              <div className="p-4 mb-4 bg-bambu-dark rounded-2xl">
                 <FileBox className="w-12 h-12 text-bambu-gray/50" />
               </div>
-              <h3 className="text-lg font-medium text-white mb-2">
+              <h3 className="mb-2 text-lg font-medium text-white">
                 {selectedFolderId !== null ? t('fileManager.folderIsEmpty') : t('fileManager.noFilesYet')}
               </h3>
-              <p className="text-bambu-gray text-center max-w-md mb-6">
+              <p className="max-w-md mb-6 text-center text-bambu-gray">
                 {selectedFolderId !== null
                   ? t('fileManager.folderEmptyDescription')
                   : t('fileManager.noFilesDescription')}
@@ -1945,12 +1983,12 @@ export function FileManagerPage() {
               </Button>
             </div>
           ) : filteredAndSortedFiles.length === 0 ? (
-            <div className="flex-1 flex flex-col items-center justify-center">
-              <div className="p-4 bg-bambu-dark rounded-2xl mb-4">
+            <div className="flex flex-col items-center justify-center flex-1">
+              <div className="p-4 mb-4 bg-bambu-dark rounded-2xl">
                 <Search className="w-12 h-12 text-bambu-gray/50" />
               </div>
-              <h3 className="text-lg font-medium text-white mb-2">{t('fileManager.noMatchingFiles')}</h3>
-              <p className="text-bambu-gray text-center max-w-md mb-6">
+              <h3 className="mb-2 text-lg font-medium text-white">{t('fileManager.noMatchingFiles')}</h3>
+              <p className="max-w-md mb-6 text-center text-bambu-gray">
                 {t('fileManager.noMatchingFilesDescription')}
               </p>
               <Button variant="secondary" onClick={() => { setSearchQuery(''); setFilterType('all'); }}>
@@ -1959,7 +1997,7 @@ export function FileManagerPage() {
             </div>
           ) : viewMode === 'grid' ? (
             <div className="flex-1 lg:overflow-y-auto">
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-4">
+              <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
                 {filteredAndSortedFiles.map((file) => (
                   <FileCard
                     key={file.id}
@@ -2000,7 +2038,7 @@ export function FileManagerPage() {
             </div>
           ) : (
             <div className="flex-1 lg:overflow-y-auto">
-              <div className="bg-bambu-dark-secondary rounded-lg border border-bambu-dark-tertiary overflow-hidden">
+              <div className="overflow-hidden border rounded-lg bg-bambu-dark-secondary border-bambu-dark-tertiary">
                 {/* List header - hidden on mobile, show simplified on small screens */}
                 <div className={`hidden sm:grid ${authEnabled ? 'grid-cols-[auto_1fr_120px_100px_100px_100px_80px]' : 'grid-cols-[auto_1fr_100px_100px_100px_80px]'} gap-4 px-4 py-2 bg-bambu-dark-secondary border-b border-bambu-dark-tertiary text-xs text-bambu-gray font-medium`}>
                   <div className="w-6" />
@@ -2029,29 +2067,29 @@ export function FileManagerPage() {
                       {selectedFiles.includes(file.id) && <div className="w-2 h-2 bg-white rounded-sm" />}
                     </div>
                     {/* Name with thumbnail */}
-                    <div className="flex items-center gap-3 min-w-0">
+                    <div className="flex items-center min-w-0 gap-3">
                       <div className="relative group/thumb">
-                        <div className="w-10 h-10 rounded bg-bambu-dark flex-shrink-0 overflow-hidden">
+                        <div className="flex-shrink-0 w-10 h-10 overflow-hidden rounded bg-bambu-dark">
                           {file.thumbnail_path ? (
                             <img
                               src={`${api.getLibraryFileThumbnailUrl(file.id)}${thumbnailVersions[file.id] ? ((api.getLibraryFileThumbnailUrl(file.id).includes('?') ? '&' : '?') + `v=${thumbnailVersions[file.id]}`) : ''}`}
                               alt=""
-                              className="w-full h-full object-cover"
+                              className="object-cover w-full h-full"
                             />
                           ) : (
-                            <div className="w-full h-full flex items-center justify-center">
+                            <div className="flex items-center justify-center w-full h-full">
                               <FileBox className="w-5 h-5 text-bambu-gray/50" />
                             </div>
                           )}
                         </div>
                         {/* Hover preview */}
                         {file.thumbnail_path && (
-                          <div className="absolute left-0 top-full mt-2 z-50 hidden group-hover/thumb:block">
-                            <div className="w-48 h-48 rounded-lg bg-bambu-dark-secondary border border-bambu-dark-tertiary shadow-xl overflow-hidden">
+                          <div className="absolute left-0 z-50 hidden mt-2 top-full group-hover/thumb:block">
+                            <div className="w-48 h-48 overflow-hidden border rounded-lg shadow-xl bg-bambu-dark-secondary border-bambu-dark-tertiary">
                               <img
                                 src={`${api.getLibraryFileThumbnailUrl(file.id)}${thumbnailVersions[file.id] ? ((api.getLibraryFileThumbnailUrl(file.id).includes('?') ? '&' : '?') + `v=${thumbnailVersions[file.id]}`) : ''}`}
                                 alt={file.filename}
-                                className="w-full h-full object-contain"
+                                className="object-contain w-full h-full"
                               />
                             </div>
                           </div>
@@ -2063,7 +2101,7 @@ export function FileManagerPage() {
                     </div>
                     {/* Uploaded By - only show when auth is enabled */}
                     {authEnabled && (
-                      <div className="text-sm text-bambu-gray flex items-center gap-1">
+                      <div className="flex items-center gap-1 text-sm text-bambu-gray">
                         {file.created_by_username ? (
                           <>
                             <User className="w-3 h-3" />

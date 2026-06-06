@@ -21,8 +21,7 @@ export function PlateSelector({
 }: PlateSelectorProps) {
   const { t } = useTranslation();
 
-  // Only show for multi-plate files with multiple plates
-  if (!isMultiPlate || plates.length <= 1) {
+  if (plates.length === 0) {
     return null;
   }
 
@@ -32,9 +31,13 @@ export function PlateSelector({
     <div className="mb-4">
       <div className="flex items-center gap-2 mb-2">
         <Layers className="w-4 h-4 text-bambu-gray" />
-        <span className="text-sm text-bambu-gray">Select Plate{multiSelect ? 's' : ''} to Print</span>
+        <span className="text-sm text-bambu-gray">
+          {isMultiPlate
+            ? `Select Plate${multiSelect ? 's' : ''} to Print`
+            : 'Plate to Print'}
+        </span>
         {selectedPlates.size === 0 && (
-          <span className="text-xs text-orange-400 flex items-center gap-1">
+          <span className="flex items-center gap-1 text-xs text-orange-400">
             <AlertTriangle className="w-3 h-3" />
             Selection required
           </span>
@@ -70,26 +73,26 @@ export function PlateSelector({
               }`}
             >
               {multiSelect && (
-                isSelected
-                  ? <CheckSquare className="w-4 h-4 text-bambu-green flex-shrink-0" />
-                  : <Square className="w-4 h-4 text-bambu-gray flex-shrink-0" />
+                  isSelected
+                  ? <CheckSquare className="shrink-0 w-4 h-4 text-bambu-green" />
+                  : <Square className="shrink-0 w-4 h-4 text-bambu-gray" />
               )}
               {plate.has_thumbnail && plate.thumbnail_url != null ? (
                 <img
                   src={withStreamToken(plate.thumbnail_url)}
                   alt={`Plate ${plate.index}`}
-                  className="w-10 h-10 rounded object-cover bg-bambu-dark-tertiary"
+                  className="object-cover w-10 h-10 rounded bg-bambu-dark-tertiary"
                 />
               ) : (
-                <div className="w-10 h-10 rounded bg-bambu-dark-tertiary flex items-center justify-center">
+                <div className="flex items-center justify-center w-10 h-10 rounded bg-bambu-dark-tertiary">
                   <Layers className="w-5 h-5 text-bambu-gray" />
                 </div>
               )}
-              <div className="min-w-0 flex-1">
-                <p className="text-sm text-white font-medium truncate">
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-white truncate">
                   {plate.name || `Plate ${plate.index}`}
                 </p>
-                <p className="text-xs text-bambu-gray truncate">
+                <p className="text-xs truncate text-bambu-gray">
                   {plate.objects.length > 0
                     ? plate.objects.slice(0, 3).join(', ') +
                       (plate.objects.length > 3 ? '...' : '')
@@ -98,7 +101,7 @@ export function PlateSelector({
                 </p>
               </div>
               {!multiSelect && isSelected && (
-                <Check className="w-4 h-4 text-bambu-green flex-shrink-0" />
+                <Check className="shrink-0 w-4 h-4 text-bambu-green" />
               )}
             </button>
           );
