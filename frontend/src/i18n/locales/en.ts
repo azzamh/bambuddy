@@ -2426,7 +2426,7 @@ export default {
 
   // Login page
   login: {
-    title: 'Bambuddy Login',
+    title: 'AZ3D Factory Login',
     subtitle: 'Sign in to your account',
     username: 'Username',
     usernamePlaceholder: 'Enter your username',
