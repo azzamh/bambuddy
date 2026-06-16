@@ -88,3 +88,6 @@ file-manager-data/*
 
 # Large data files
 bambuddy_data/archive.zip
+
+bambuddy_data/*
+
