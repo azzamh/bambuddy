@@ -357,12 +357,8 @@ export function PrintModal({
     settings?.prefer_lowest_filament,
   );
 
-  // Auto-select first plate when plates load (single or multi-plate)
-  useEffect(() => {
-    if (platesData?.plates && platesData.plates.length >= 1 && selectedPlates.size === 0) {
-      setSelectedPlates(new Set([platesData.plates[0].index]));
-    }
-  }, [platesData, selectedPlates.size]);
+  // Note: plate selection is intentionally left unselected by default.
+  // Users must explicitly pick which plate(s) to print.
 
   // Auto-select first printer when only one available
   useEffect(() => {

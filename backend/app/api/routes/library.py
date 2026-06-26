@@ -3431,6 +3431,20 @@ async def get_file(
         filament_grams = file.file_metadata.get("filament_used_grams")
         sliced_for_model = file.file_metadata.get("sliced_for_model")
 
+    # Fallback: extract sliced_for_model from 3MF plates data when metadata is missing
+    if not sliced_for_model and file.file_type in ("3mf", "gcode.3mf"):
+        try:
+            from backend.app.utils.printer_models import normalize_printer_model
+
+            file_path_full = Path(app_settings.base_dir) / file.file_path
+            if file_path_full.exists():
+                with zipfile.ZipFile(file_path_full, "r") as zf:
+                    raw_model = extract_source_printer_model_from_3mf(zf)
+                    if raw_model:
+                        sliced_for_model = normalize_printer_model(raw_model)
+        except (zipfile.BadZipFile, OSError, Exception):
+            pass
+
     return FileResponseSchema(
         id=file.id,
         folder_id=file.folder_id,
