@@ -171,6 +171,37 @@ export function MultiPrintTemplatesPage() {
     setIsFormOpen(true);
   };
 
+  const openCreateFormDuplicate = (template: MultiPrintTemplate) => {
+    setFormTemplate(null);
+    setFormName(`${template.name} (Copy)`);
+    setFormDescription(template.description || '');
+    setFormItems(
+      template.items.map((item: MultiPrintTemplateItem) => ({
+        label: item.label || '',
+        archive_id: item.archive_id ? String(item.archive_id) : '',
+        library_file_id: item.library_file_id ? String(item.library_file_id) : '',
+        plate_id: item.plate_id ? String(item.plate_id) : '',
+        printer_id: item.printer_id ? String(item.printer_id) : '',
+        target_model: item.target_model || '',
+        target_location: item.target_location || '',
+        ams_mapping: item.ams_mapping ? item.ams_mapping.join(',') : '',
+        scheduled_time: item.scheduled_time ? item.scheduled_time.slice(0, 16) : '',
+        manual_start: item.manual_start,
+        require_previous_success: item.require_previous_success,
+        auto_off_after: item.auto_off_after,
+        bed_levelling: item.bed_levelling,
+        flow_cali: item.flow_cali,
+        vibration_cali: item.vibration_cali,
+        layer_inspect: item.layer_inspect,
+        timelapse: item.timelapse,
+        use_ams: item.use_ams,
+        gcode_injection: item.gcode_injection,
+      }))
+    );
+    setFormErrors([]);
+    setIsFormOpen(true);
+  };
+
   const openEditForm = (template: MultiPrintTemplate) => {
     setFormTemplate(template);
     setFormName(template.name);
@@ -552,6 +583,7 @@ export function MultiPrintTemplatesPage() {
         onEdit={openEditForm}
         onRun={setRunTemplate}
         onDelete={setDeleteTemplate}
+        onDuplicate={openCreateFormDuplicate}
         canManageTemplates={canManageTemplates}
         canRunTemplates={canRunTemplates}
       />

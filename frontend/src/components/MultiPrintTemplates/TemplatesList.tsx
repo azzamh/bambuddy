@@ -1,5 +1,5 @@
 import { useTranslation } from 'react-i18next';
-import { Pencil, Play, Trash2 } from 'lucide-react';
+import { Copy, Pencil, Play, Trash2 } from 'lucide-react';
 import type { MultiPrintTemplate } from '../../api/client';
 import { Button } from '../Button';
 import { Card, CardContent, CardHeader } from '../Card';
@@ -13,6 +13,7 @@ interface TemplatesListProps {
   onEdit: (template: MultiPrintTemplate) => void;
   onRun: (template: MultiPrintTemplate) => void;
   onDelete: (template: MultiPrintTemplate) => void;
+  onDuplicate: (template: MultiPrintTemplate) => void;
   canManageTemplates: boolean;
   canRunTemplates: boolean;
 }
@@ -25,6 +26,7 @@ export function TemplatesList({
   onEdit,
   onRun,
   onDelete,
+  onDuplicate,
   canManageTemplates,
   canRunTemplates,
 }: TemplatesListProps) {
@@ -62,6 +64,15 @@ export function TemplatesList({
                   </div>
                 </div>
                 <div className="flex flex-wrap gap-2">
+                  <Button
+                    variant="secondary"
+                    onClick={() => onDuplicate(template)}
+                    disabled={!canManageTemplates}
+                    title={!canManageTemplates ? t('multiPrintTemplates.noEditPermission') : undefined}
+                  >
+                    <Copy className="w-4 h-4" />
+                    {t('multiPrintTemplates.duplicate')}
+                  </Button>
                   <Button
                     variant="secondary"
                     onClick={() => onEdit(template)}
