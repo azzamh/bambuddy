@@ -1,5 +1,6 @@
 import { useTranslation } from 'react-i18next';
-import { Copy, Pencil, Play, Trash2 } from 'lucide-react';
+import { useState, useRef, useEffect } from 'react';
+import { Copy, MoreHorizontal, Pencil, Play, Trash2 } from 'lucide-react';
 import type { MultiPrintTemplate } from '../../api/client';
 import { Button } from '../Button';
 import { Card, CardContent, CardHeader } from '../Card';
@@ -31,6 +32,21 @@ export function TemplatesList({
   canRunTemplates,
 }: TemplatesListProps) {
   const { t } = useTranslation();
+  const [openMenuId, setOpenMenuId] = useState<number | null>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  // Close menu on outside click
+  useEffect(() => {
+    const handleClick = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setOpenMenuId(null);
+      }
+    };
+    if (openMenuId !== null) {
+      document.addEventListener('mousedown', handleClick);
+      return () => document.removeEventListener('mousedown', handleClick);
+    }
+  }, [openMenuId]);
 
   return (
     <Card>
@@ -54,7 +70,7 @@ export function TemplatesList({
         ) : templates.length === 0 ? (
           <div className="text-sm text-bambu-gray">{t('multiPrintTemplates.empty')}</div>
         ) : (
-          <div className="divide-y divide-bambu-border">
+          <div className="divide-y divide-bambu-dark-tertiary">
             {templates.map((template: MultiPrintTemplate) => (
               <div key={template.id} className="flex flex-col gap-2 py-4 sm:flex-row sm:items-center sm:justify-between">
                 <div>
@@ -64,15 +80,6 @@ export function TemplatesList({
                   </div>
                 </div>
                 <div className="flex flex-wrap gap-2">
-                  <Button
-                    variant="secondary"
-                    onClick={() => onDuplicate(template)}
-                    disabled={!canManageTemplates}
-                    title={!canManageTemplates ? t('multiPrintTemplates.noEditPermission') : undefined}
-                  >
-                    <Copy className="w-4 h-4" />
-                    {t('multiPrintTemplates.duplicate')}
-                  </Button>
                   <Button
                     variant="secondary"
                     onClick={() => onEdit(template)}
@@ -91,15 +98,45 @@ export function TemplatesList({
                     <Play className="w-4 h-4" />
                     {t('multiPrintTemplates.run')}
                   </Button>
-                  <Button
-                    variant="danger"
-                    onClick={() => onDelete(template)}
-                    disabled={!canManageTemplates}
-                    title={!canManageTemplates ? t('multiPrintTemplates.noDeletePermission') : undefined}
-                  >
-                    <Trash2 className="w-4 h-4" />
-                    {t('multiPrintTemplates.delete')}
-                  </Button>
+
+                  {/* 3-dot menu: Duplicate & Delete */}
+                  <div className="relative" ref={openMenuId === template.id ? menuRef : undefined}>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setOpenMenuId(openMenuId === template.id ? null : template.id)}
+                    >
+                      <MoreHorizontal className="w-4 h-4" />
+                    </Button>
+                    {openMenuId === template.id && (
+                      <div className="absolute right-0 z-50 mt-1 border rounded-lg shadow-lg bg-bambu-dark-secondary border-bambu-dark-tertiary min-w-35">
+                        <button
+                          type="button"
+                          className="flex items-center w-full gap-2 px-3 py-2 text-sm text-left text-bambu-gray transition-colors rounded-t-lg hover:bg-bambu-dark-tertiary hover:text-white"
+                          onClick={() => {
+                            onDuplicate(template);
+                            setOpenMenuId(null);
+                          }}
+                          disabled={!canManageTemplates}
+                        >
+                          <Copy className="w-4 h-4" />
+                          {t('multiPrintTemplates.duplicate')}
+                        </button>
+                        <button
+                          type="button"
+                          className="flex items-center w-full gap-2 px-3 py-2 text-sm text-left text-red-400 transition-colors rounded-b-lg hover:bg-red-500/10 hover:text-red-300"
+                          onClick={() => {
+                            onDelete(template);
+                            setOpenMenuId(null);
+                          }}
+                          disabled={!canManageTemplates}
+                        >
+                          <Trash2 className="w-4 h-4" />
+                          {t('multiPrintTemplates.delete')}
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
             ))}

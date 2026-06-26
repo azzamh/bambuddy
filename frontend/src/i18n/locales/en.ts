@@ -5755,6 +5755,7 @@ export default {
     loading: 'Loading templates...',
     empty: 'No templates yet',
     view: 'View',
+    duplicate: 'Duplicate',
     edit: 'Edit',
     run: 'Run',
     delete: 'Delete',
