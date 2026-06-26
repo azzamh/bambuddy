@@ -5,6 +5,7 @@ import type { ArchivePlatesResponse, LibraryFilePlatesResponse } from '../../typ
 import type { AssignmentMode, PrintOptions, ScheduleOptions } from '../PrintModal/types';
 import { Button } from '../Button';
 import { Card, CardContent } from '../Card';
+import { FilamentMapping } from '../PrintModal/FilamentMapping';
 import { PlateSelector } from '../PrintModal/PlateSelector';
 import { PrintOptionsPanel } from '../PrintModal/PrintOptions';
 import { PrinterSelector } from '../PrintModal/PrinterSelector';
@@ -67,6 +68,10 @@ interface ItemModalProps {
   formErrors: string[];
   onClose: () => void;
   onSave: () => void;
+  // Filament mapping
+  itemFilamentReqs?: { filaments: Array<{ slot_id: number; type: string; color: string; used_grams: number; used_meters: number; nozzle_id?: number }> } | null;
+  itemManualMappings?: Record<number, number>;
+  onItemManualMappingsChange?: (mappings: Record<number, number>) => void;
 }
 
 export function ItemModal({
@@ -104,6 +109,9 @@ export function ItemModal({
   formErrors,
   onClose,
   onSave,
+  itemFilamentReqs,
+  itemManualMappings,
+  onItemManualMappingsChange,
 }: ItemModalProps) {
   const { t } = useTranslation();
 
@@ -267,6 +275,25 @@ export function ItemModal({
             />
 
             <PrintOptionsPanel options={itemPrintOptions} onChange={onPrintOptionsChange} />
+
+            {itemAssignmentMode === 'printer' && itemSelectedPrinters.length === 1 && itemFilamentReqs && itemManualMappings !== undefined && onItemManualMappingsChange && (
+              <div className="border rounded-lg border-bambu-border bg-bambu-card">
+                <div className="p-3 border-b border-bambu-dark-tertiary">
+                  <label className="block text-xs font-medium text-bambu-gray">Filament Mapping</label>
+                </div>
+                <div className="p-3">
+                  <FilamentMapping
+                    printerId={itemSelectedPrinters[0]}
+                    filamentReqs={itemFilamentReqs}
+                    manualMappings={itemManualMappings}
+                    onManualMappingChange={onItemManualMappingsChange}
+                    currencySymbol=""
+                    defaultCostPerKg={0}
+                    defaultExpanded={true}
+                  />
+                </div>
+              </div>
+            )}
 
             {formErrors.length > 0 && (
               <div className="p-3 text-sm text-red-200 border rounded-lg border-red-500/40 bg-red-500/10">

@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useQuery } from '@tanstack/react-query';
 import type { MultiPrintTemplate, MultiPrintTemplateCreate, MultiPrintTemplateItem, MultiPrintTemplateRunResponse } from '../api/client';
 import { api } from '../api/client';
 import type { ArchivePlatesResponse, LibraryFilePlatesResponse } from '../types/plates';
@@ -64,6 +65,8 @@ export function MultiPrintTemplatesPage() {
   const [selectedPlates, setSelectedPlates] = useState<Set<number>>(new Set());
   const [folderSearch, setFolderSearch] = useState('');
   const [fileSearch, setFileSearch] = useState('');
+  // Filament mapping for the item modal
+  const [itemManualMappings, setItemManualMappings] = useState<Record<number, number>>({});
 
   type FormItem = {
     label: string;
@@ -127,6 +130,26 @@ export function MultiPrintTemplatesPage() {
     itemDraft?.library_file_id,
     selectedPrinterId
   );
+
+  // The selected plate for filament mapping queries
+  const itemSelectedPlate = selectedPlates.size === 1 ? [...selectedPlates][0] : (itemDraft?.plate_id ? Number(itemDraft.plate_id) : null);
+
+  // Fetch filament requirements for the selected item
+  const { data: itemFilamentReqs } = useQuery({
+    queryKey: ['multi-print-template-filament-reqs', itemDraft?.archive_id || itemDraft?.library_file_id, itemSelectedPlate],
+    queryFn: async () => {
+      if (itemDraft?.archive_id) {
+        const data = await api.getArchiveFilamentRequirements(Number(itemDraft.archive_id), itemSelectedPlate ?? undefined);
+        return { filaments: data.filaments } as { filaments: Array<{ slot_id: number; type: string; color: string; used_grams: number; used_meters: number; nozzle_id?: number }> };
+      }
+      if (itemDraft?.library_file_id) {
+        const data = await api.getLibraryFileFilamentRequirements(Number(itemDraft.library_file_id), itemSelectedPlate ?? undefined);
+        return { filaments: data.filaments } as { filaments: Array<{ slot_id: number; type: string; color: string; used_grams: number; used_meters: number; nozzle_id?: number }> };
+      }
+      return null;
+    },
+    enabled: isItemModalOpen && Boolean(itemDraft?.archive_id || itemDraft?.library_file_id),
+  });
 
   const { archivesById, libraryFilesById, printersById } = useFormItemsDetailsQueries(formItems);
 
@@ -618,6 +641,9 @@ export function MultiPrintTemplatesPage() {
         formErrors={formErrors}
         onClose={closeItemModal}
         onSave={applyItemDraft}
+        itemFilamentReqs={itemFilamentReqs}
+        itemManualMappings={itemManualMappings}
+        onItemManualMappingsChange={setItemManualMappings}
       />
 
       {isBrowseModalOpen && !runTemplate && (
