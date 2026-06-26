@@ -1,6 +1,6 @@
 import { useTranslation } from 'react-i18next';
 import { useState, useRef, useEffect } from 'react';
-import { Copy, MoreHorizontal, Pencil, Play, Trash2 } from 'lucide-react';
+import { Copy, MoreVertical, Pencil, Play, Trash2 } from 'lucide-react';
 import type { MultiPrintTemplate } from '../../api/client';
 import { Button } from '../Button';
 import { Card, CardContent, CardHeader } from '../Card';
@@ -81,22 +81,22 @@ export function TemplatesList({
                 </div>
                 <div className="flex flex-wrap gap-2">
                   <Button
-                    variant="secondary"
+                    variant="ghost"
                     onClick={() => onEdit(template)}
                     disabled={!canManageTemplates}
                     title={!canManageTemplates ? t('multiPrintTemplates.noEditPermission') : undefined}
                   >
                     <Pencil className="w-4 h-4" />
-                    {t('multiPrintTemplates.edit')}
+                    {/* {t('multiPrintTemplates.edit')} */}
                   </Button>
                   <Button
-                    variant="primary"
+                    variant="ghost"
                     onClick={() => onRun(template)}
                     disabled={!canRunTemplates}
                     title={!canRunTemplates ? t('multiPrintTemplates.noRunPermission') : undefined}
                   >
                     <Play className="w-4 h-4" />
-                    {t('multiPrintTemplates.run')}
+                    {/* {t('multiPrintTemplates.run')} */}
                   </Button>
 
                   {/* 3-dot menu: Duplicate & Delete */}
@@ -106,13 +106,13 @@ export function TemplatesList({
                       size="sm"
                       onClick={() => setOpenMenuId(openMenuId === template.id ? null : template.id)}
                     >
-                      <MoreHorizontal className="w-4 h-4" />
+                      <MoreVertical className="w-4 h-4" />
                     </Button>
                     {openMenuId === template.id && (
                       <div className="absolute right-0 z-50 mt-1 border rounded-lg shadow-lg bg-bambu-dark-secondary border-bambu-dark-tertiary min-w-35">
                         <button
                           type="button"
-                          className="flex items-center w-full gap-2 px-3 py-2 text-sm text-left text-bambu-gray transition-colors rounded-t-lg hover:bg-bambu-dark-tertiary hover:text-white"
+                          className="flex items-center w-full gap-2 px-3 py-2 text-sm text-left transition-colors rounded-t-lg text-bambu-gray hover:bg-bambu-dark-tertiary hover:text-white"
                           onClick={() => {
                             onDuplicate(template);
                             setOpenMenuId(null);

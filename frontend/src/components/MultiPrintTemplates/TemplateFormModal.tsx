@@ -108,7 +108,7 @@ export function TemplateFormModal({
                 <div key={`${idx}-${item.label}`} className="relative p-4 border rounded-lg border-bambu-border bg-bambu-card">
                   <div className="absolute flex gap-1 top-2 right-2">
                     <Button
-                      variant="secondary"
+                      variant="ghost"
                       size="sm"
                       onClick={() => onEditItem(idx)}
                       title={t('common.edit')}
@@ -116,13 +116,13 @@ export function TemplateFormModal({
                       <Pencil className="w-4 h-4" />
                     </Button>
                     <Button
-                      variant="danger"
+                      variant="ghost"
                       color="red"
                       size="sm"
                       onClick={() => onRemoveItem(idx)}
                       title={t('multiPrintTemplates.removeItem')}
                     >
-                      <Trash2 className="w-4 h-4" />
+                      <Trash2 className="w-4 h-4 text-red-500" />
                     </Button>
                   </div>
                   <div className="pr-20">
