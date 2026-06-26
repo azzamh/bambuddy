@@ -1000,6 +1000,8 @@ export function FileManagerPage() {
   // Filter and sort state (persist sort preferences to localStorage)
   const [searchQuery, setSearchQuery] = useState('');
   const [folderSearch, setFolderSearch] = useState('');
+  const [mobileFolderSearch, setMobileFolderSearch] = useState('');
+  const [isMobileFolderOpen, setIsMobileFolderOpen] = useState(false);
   const [filterType, setFilterType] = useState<string>('all');
   const [filterUsername, setFilterUsername] = useState('');
   const [sortField, setSortField] = useState<SortField>(() => {
@@ -1089,6 +1091,23 @@ export function FileManagerPage() {
     if (!folders) return [];
     return filterFolders(folders);
   }, [folders, filterFolders]);
+
+  // Flatten folder tree for mobile selector
+  const flattenFoldersForMobile = useCallback((items: LibraryFolderTree[], depth = 0): { id: number; name: string; fileCount: number; depth: number }[] => {
+    const result: { id: number; name: string; fileCount: number; depth: number }[] = [];
+    for (const item of items) {
+      result.push({ id: item.id, name: item.name, fileCount: item.file_count, depth });
+      if (item.children.length > 0) {
+        result.push(...flattenFoldersForMobile(item.children, depth + 1));
+      }
+    }
+    return result;
+  }, []);
+
+  const folderFilter = useCallback((folder: { id: number; name: string; fileCount: number; depth: number }) => {
+    if (!mobileFolderSearch.trim()) return true;
+    return folder.name.toLowerCase().includes(mobileFolderSearch.toLowerCase());
+  }, [mobileFolderSearch]);
 
   // Filter and sort files
   const filteredAndSortedFiles = useMemo(() => {
@@ -1572,31 +1591,55 @@ export function FileManagerPage() {
       <div className="flex flex-col flex-1 min-h-0 gap-4 lg:flex-row lg:gap-6">
         {/* Mobile folder selector */}
         <div className="lg:hidden">
-          <select
-            value={selectedFolderId ?? ''}
-            onChange={(e) => setSelectedFolderId(e.target.value ? parseInt(e.target.value, 10) : null)}
-            className="w-full bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg px-3 py-2.5 text-white focus:outline-none focus:border-bambu-green"
-          >
-            <option value="">📁 {t('fileManager.allFiles')}</option>
-            {folders && (() => {
-              // Flatten folder tree for mobile selector
-              const flattenFolders = (items: LibraryFolderTree[], depth = 0): { id: number; name: string; fileCount: number; depth: number }[] => {
-                const result: { id: number; name: string; fileCount: number; depth: number }[] = [];
-                for (const item of items) {
-                  result.push({ id: item.id, name: item.name, fileCount: item.file_count, depth });
-                  if (item.children.length > 0) {
-                    result.push(...flattenFolders(item.children, depth + 1));
-                  }
-                }
-                return result;
-              };
-              return flattenFolders(folders).map((folder) => (
-                <option key={folder.id} value={folder.id}>
-                  {'│ '.repeat(folder.depth)}📂 {folder.name} {folder.fileCount > 0 ? `(${folder.fileCount})` : ''}
-                </option>
-              ));
-            })()}
-          </select>
+          <div className="relative">
+            <input
+              type="text"
+              placeholder="🔍 Search folders..."
+              className="w-full bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg px-3 py-2.5 text-white focus:outline-none focus:border-bambu-green placeholder:text-bambu-gray/50"
+              value={mobileFolderSearch}
+              onChange={(e) => setMobileFolderSearch(e.target.value)}
+              onFocus={() => setIsMobileFolderOpen(true)}
+            />
+            {isMobileFolderOpen && (
+              <div className="absolute z-50 w-full mt-1 overflow-y-auto border rounded-lg shadow-lg max-h-72 bg-bambu-dark-secondary border-bambu-dark-tertiary">
+                <button
+                  className={`w-full text-left px-3 py-2 text-sm transition-colors hover:bg-bambu-dark-tertiary ${
+                    selectedFolderId === null ? 'text-bambu-green bg-bambu-green/10' : 'text-white'
+                  }`}
+                  onClick={() => {
+                    setSelectedFolderId(null);
+                    setIsMobileFolderOpen(false);
+                    setMobileFolderSearch('');
+                  }}
+                >
+                  📁 {t('fileManager.allFiles')}
+                </button>
+                {folders && flattenFoldersForMobile(folders).filter(folderFilter).map((folder) => {
+                  const label = `${'│ '.repeat(folder.depth)}📂 ${folder.name}${folder.fileCount > 0 ? ` (${folder.fileCount})` : ''}`;
+                  return (
+                    <button
+                      key={folder.id}
+                      className={`w-full text-left px-3 py-2 text-sm transition-colors hover:bg-bambu-dark-tertiary ${
+                        selectedFolderId === folder.id ? 'text-bambu-green bg-bambu-green/10' : 'text-white'
+                      }`}
+                      onClick={() => {
+                        setSelectedFolderId(folder.id);
+                        setIsMobileFolderOpen(false);
+                        setMobileFolderSearch('');
+                      }}
+                    >
+                      {label}
+                    </button>
+                  );
+                })}
+                {folders && flattenFoldersForMobile(folders).filter(folderFilter).length === 0 && (
+                  <div className="px-3 py-4 text-sm text-center text-bambu-gray">
+                    No folders match &quot;{mobileFolderSearch}&quot;
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Folder sidebar - resizable, hidden on mobile */}
