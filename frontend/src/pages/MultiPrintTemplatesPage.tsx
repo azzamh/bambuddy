@@ -36,11 +36,6 @@ export function MultiPrintTemplatesPage() {
   const [deleteTemplate, setDeleteTemplate] = useState<MultiPrintTemplate | null>(null);
   const [runTemplate, setRunTemplate] = useState<MultiPrintTemplate | null>(null);
   const [runResult, setRunResult] = useState<MultiPrintTemplateRunResponse | null>(null);
-  const [runOverrides, setRunOverrides] = useState({
-    scheduled_time: '',
-    override_printer_id: '',
-    override_target_model: '',
-  });
   const [formTemplate, setFormTemplate] = useState<MultiPrintTemplate | null>(null);
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [formName, setFormName] = useState('');
@@ -527,7 +522,6 @@ export function MultiPrintTemplatesPage() {
   };
 
   const resetRunState = () => {
-    setRunOverrides({ scheduled_time: '', override_printer_id: '', override_target_model: '' });
     setRunResult(null);
     setRunTemplate(null);
   };
@@ -670,25 +664,15 @@ export function MultiPrintTemplatesPage() {
         <RunConfirmModal
           template={runTemplate}
           runResult={runResult}
-          runOverrides={runOverrides}
-          onOverridesChange={setRunOverrides}
           onConfirm={() => {
             setRunResult({
               created_queue_ids: [],
               failed_items: [],
             });
-            runMutation.mutate({
-              id: runTemplate.id,
-              data: {
-                scheduled_time: runOverrides.scheduled_time
-                  ? new Date(runOverrides.scheduled_time).toISOString()
-                  : null,
-                override_printer_id: runOverrides.override_printer_id
-                  ? Number(runOverrides.override_printer_id)
-                  : null,
-                override_target_model: runOverrides.override_target_model || null,
-              },
-            });
+            runMutation.mutate(
+              { id: runTemplate.id, data: {} },
+              { onSuccess: () => resetRunState() }
+            );
           }}
           onCancel={resetRunState}
           isPending={runMutation.isPending}

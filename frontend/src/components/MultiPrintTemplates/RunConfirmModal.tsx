@@ -5,12 +5,6 @@ import { Button } from '../Button';
 interface RunConfirmModalProps {
   template: MultiPrintTemplate;
   runResult: MultiPrintTemplateRunResponse | null;
-  runOverrides: {
-    scheduled_time: string;
-    override_printer_id: string;
-    override_target_model: string;
-  };
-  onOverridesChange: (overrides: { scheduled_time: string; override_printer_id: string; override_target_model: string }) => void;
   onConfirm: () => void;
   onCancel: () => void;
   isPending: boolean;
@@ -19,15 +13,11 @@ interface RunConfirmModalProps {
 export function RunConfirmModal({
   template,
   runResult,
-  runOverrides,
-  onOverridesChange,
   onConfirm,
   onCancel,
   isPending,
 }: RunConfirmModalProps) {
   const { t } = useTranslation();
-
-  const canRun = !(!!runOverrides.override_printer_id && !!runOverrides.override_target_model);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70">
@@ -36,35 +26,6 @@ export function RunConfirmModal({
         <p className="mb-4 text-sm text-bambu-gray">
           {t('multiPrintTemplates.runConfirmMessage', { name: template.name })}
         </p>
-        <div className="space-y-4">
-          <div>
-            <label className="block mb-1 text-sm text-bambu-gray">{t('multiPrintTemplates.runScheduled')}</label>
-            <input
-              type="datetime-local"
-              className="w-full px-3 py-2 text-white border rounded-md border-bambu-border bg-bambu-card"
-              value={runOverrides.scheduled_time}
-              onChange={(e: { target: { value: any; } }) => onOverridesChange({ ...runOverrides, scheduled_time: e.target.value })}
-            />
-          </div>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <div>
-              <label className="block mb-1 text-sm text-bambu-gray">{t('multiPrintTemplates.runPrinterId')}</label>
-              <input
-                className="w-full px-3 py-2 text-white border rounded-md border-bambu-border bg-bambu-card"
-                value={runOverrides.override_printer_id}
-                onChange={(e: { target: { value: any; } }) => onOverridesChange({ ...runOverrides, override_printer_id: e.target.value })}
-              />
-            </div>
-            <div>
-              <label className="block mb-1 text-sm text-bambu-gray">{t('multiPrintTemplates.runTargetModel')}</label>
-              <input
-                className="w-full px-3 py-2 text-white border rounded-md border-bambu-border bg-bambu-card"
-                value={runOverrides.override_target_model}
-                onChange={(e: { target: { value: any; } }) => onOverridesChange({ ...runOverrides, override_target_model: e.target.value })}
-              />
-            </div>
-          </div>
-        </div>
 
         {runResult && (
           <div className="p-3 mt-4 text-sm border rounded-lg border-bambu-border bg-bambu-card text-bambu-gray">
@@ -85,7 +46,7 @@ export function RunConfirmModal({
           </Button>
           <Button
             variant="primary"
-            disabled={isPending || !canRun}
+            disabled={isPending}
             onClick={onConfirm}
           >
             {t('multiPrintTemplates.run')}
