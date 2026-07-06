@@ -1,8 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { AlertCircle, AlertTriangle, Calendar, Code, Layers, Loader2, Pencil, Printer, X } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { AlertCircle, AlertTriangle, Calendar, Code, Layers, Loader2, Pencil, Printer, Save, X } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import type { PrintQueueItemCreate, PrintQueueItemUpdate, SpoolAssignment } from '../../api/client';
+import type {
+  MultiPrintTemplateCreate,
+  PrintQueueItemCreate,
+  PrintQueueItemUpdate,
+  SpoolAssignment,
+} from '../../api/client';
 import { api } from '../../api/client';
 import { useAuth } from '../../contexts/AuthContext';
 import { Card, CardContent } from '../Card';
@@ -17,6 +22,11 @@ import { toDateTimeLocalValue, parseUTCDate } from '../../utils/date';
 import { getGlobalTrayId, isPlaceholderDate } from '../../utils/amsHelpers';
 import { FilamentMapping } from './FilamentMapping';
 import { FilamentOverride } from './FilamentOverride';
+import {
+  PlateConfiguration,
+  type PlateConfigurationHandle,
+  type PlateConfigurationState,
+} from './PlateConfiguration';
 import { PlateSelector } from './PlateSelector';
 import { PrinterSelector } from './PrinterSelector';
 import { PrintOptionsPanel } from './PrintOptions';
@@ -91,6 +101,11 @@ export function PrintModal({
 
   // Quantity — number of copies (creates a batch if > 1)
   const [quantity, setQuantity] = useState(1);
+
+  // Each selected plate gets its own printer, filament mapping, and quantity.
+  // Print and schedule options intentionally remain global below.
+  const [plateConfigurations, setPlateConfigurations] = useState<Record<number, PlateConfigurationState>>({});
+  const plateConfigurationRefs = useRef<Record<number, PlateConfigurationHandle | null>>({});
 
   const [printOptions, setPrintOptions] = useState<PrintOptions>(() => {
     if (mode === 'edit-queue-item' && queueItem) {
@@ -208,6 +223,9 @@ export function PrintModal({
   // Submission state for multi-printer
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitProgress, setSubmitProgress] = useState({ current: 0, total: 0 });
+  const [isTemplateDialogOpen, setIsTemplateDialogOpen] = useState(false);
+  const [templateName, setTemplateName] = useState('');
+  const [templateDescription, setTemplateDescription] = useState('');
 
   const [filamentWarningItems, setFilamentWarningItems] = useState<FilamentWarningItem[] | null>(null);
 
@@ -445,6 +463,63 @@ export function PrintModal({
 
   const isMultiPlate = platesData?.is_multi_plate ?? false;
   const plates = platesData?.plates ?? [];
+  const usesPerPlateConfiguration =
+    mode === 'add-to-queue' && isMultiPlate && selectedPlates.size > 0;
+
+  const createDefaultPlateConfiguration = useCallback((): PlateConfigurationState => ({
+    selectedPrinters: [...selectedPrinters],
+    quantity,
+    manualMappings: {},
+    perPrinterConfigs: {},
+    assignmentMode,
+    targetModel,
+    targetLocation,
+    filamentOverrides: { ...filamentOverrides },
+    forceColorMatch: { ...forceColorMatch },
+  }), [
+    assignmentMode,
+    filamentOverrides,
+    forceColorMatch,
+    quantity,
+    selectedPrinters,
+    targetLocation,
+    targetModel,
+  ]);
+
+  useEffect(() => {
+    if (!usesPerPlateConfiguration) return;
+    setPlateConfigurations((previous) => {
+      let changed = false;
+      const next = { ...previous };
+      selectedPlates.forEach((plateIndex) => {
+        if (!next[plateIndex]) {
+          next[plateIndex] = createDefaultPlateConfiguration();
+          changed = true;
+        }
+      });
+      return changed ? next : previous;
+    });
+  }, [usesPerPlateConfiguration, selectedPlates, createDefaultPlateConfiguration]);
+
+  const selectedPlateConfigurations = plates
+    .filter((plate) => selectedPlates.has(plate.index))
+    .map((plate) => ({
+      plate,
+      config: plateConfigurations[plate.index] ?? createDefaultPlateConfiguration(),
+    }));
+  const maximumConfiguredPrinterCount = usesPerPlateConfiguration
+    ? Math.max(
+        0,
+        ...selectedPlateConfigurations.map(({ config }) =>
+          config.assignmentMode === 'printer' ? config.selectedPrinters.length : 0),
+      )
+    : selectedPrinters.length;
+  const hasConfiguredPrinter = usesPerPlateConfiguration
+    ? selectedPlateConfigurations.some(({ config }) =>
+        config.assignmentMode === 'model'
+          ? !!config.targetModel
+          : config.selectedPrinters.length > 0)
+    : effectivePrinterCount > 0;
 
   const spoolAssignmentsByPrinter = useMemo(() => {
     const map = new Map<number, Map<number, SpoolAssignment>>();
@@ -481,6 +556,20 @@ export function PrintModal({
     mutationFn: (data: PrintQueueItemCreate) => api.addToQueue(data),
   });
 
+  const createTemplateMutation = useMutation({
+    mutationFn: (data: MultiPrintTemplateCreate) => api.createMultiPrintTemplate(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['multi-print-templates'] });
+      showToast(t('multiPrintTemplates.toast.created'), 'success');
+      setIsTemplateDialogOpen(false);
+      onSuccess?.();
+      onClose();
+    },
+    onError: (error: Error) => {
+      showToast(error.message || t('multiPrintTemplates.toast.createFailed'), 'error');
+    },
+  });
+
   // Update queue item mutation
   const updateQueueMutation = useMutation({
     mutationFn: (data: PrintQueueItemUpdate) => api.updateQueueItem(queueItem!.id, data),
@@ -504,29 +593,43 @@ export function PrintModal({
       !options?.skipFilamentCheck &&
       !settings?.disable_filament_warnings &&
       (mode === 'reprint' || mode === 'add-to-queue') &&
-      assignmentMode === 'printer'
+      (assignmentMode === 'printer' || usesPerPlateConfiguration)
     ) {
       const warningItems: FilamentWarningItem[] = [];
-      const filamentReqs = effectiveFilamentReqs?.filaments ?? [];
+      const filamentTargets = usesPerPlateConfiguration
+        ? selectedPlateConfigurations.flatMap(({ plate, config }) => {
+            if (config.assignmentMode !== 'printer') return [];
+            const snapshot = plateConfigurationRefs.current[plate.index]?.getSnapshot();
+            return config.selectedPrinters.map((printerId) => ({
+              printerId,
+              filamentReqs: snapshot?.filamentReqs?.filaments ?? [],
+              mapping: snapshot?.getMappingForPrinter(printerId),
+              status: snapshot?.getPrinterStatus(printerId),
+            }));
+          })
+        : selectedPrinters.map((printerId) => ({
+            printerId,
+            filamentReqs: effectiveFilamentReqs?.filaments ?? [],
+            mapping: selectedPrinters.length > 1
+              ? multiPrinterMapping.getFinalMapping(printerId)
+              : amsMapping,
+            status: selectedPrinters.length > 1
+              ? multiPrinterMapping.printerResults.find((result) => result.printerId === printerId)?.status
+              : printerStatus,
+          }));
 
-      if (filamentReqs.length > 0 && spoolAssignmentsByPrinter.size > 0) {
+      if (filamentTargets.some((target) => target.filamentReqs.length > 0) && spoolAssignmentsByPrinter.size > 0) {
         const getRemainingWeight = (labelWeight: number, weightUsed: number) => {
           if (!Number.isFinite(labelWeight) || labelWeight <= 0) return null;
           if (!Number.isFinite(weightUsed) || weightUsed < 0) return null;
           return Math.max(0, labelWeight - weightUsed);
         };
 
-        for (const printerId of selectedPrinters) {
-          const printerMapping = selectedPrinters.length > 1
-            ? multiPrinterMapping.getFinalMapping(printerId)
-            : amsMapping;
+        for (const target of filamentTargets) {
+          const { printerId, mapping: printerMapping, filamentReqs } = target;
           if (!printerMapping) continue;
 
-          const printerStatusForWarning = selectedPrinters.length > 1
-            ? multiPrinterMapping.printerResults.find((result) => result.printerId === printerId)?.status
-            : printerStatus;
-
-          const loadedFilaments = buildLoadedFilaments(printerStatusForWarning);
+          const loadedFilaments = buildLoadedFilaments(target.status);
           const slotLabelByTray = new Map(loadedFilaments.map((f) => [f.globalTrayId, f.label]));
           const assignments = spoolAssignmentsByPrinter.get(printerId);
           const printerName = printers?.find((p) => p.id === printerId)?.name ?? `Printer ${printerId}`;
@@ -563,16 +666,121 @@ export function PrintModal({
     }
 
     // Validate printer/model selection
-    if (assignmentMode === 'printer' && selectedPrinters.length === 0) {
+    if (
+      usesPerPlateConfiguration
+      && selectedPlateConfigurations.some(({ config }) =>
+        config.assignmentMode === 'model'
+          ? !config.targetModel
+          : config.selectedPrinters.length === 0)
+    ) {
+      showToast('Please select a specific printer or target model for every plate', 'error');
+      return;
+    }
+    if (!usesPerPlateConfiguration && assignmentMode === 'printer' && selectedPrinters.length === 0) {
       showToast('Please select at least one printer', 'error');
       return;
     }
-    if (assignmentMode === 'model' && !targetModel) {
+    if (!usesPerPlateConfiguration && assignmentMode === 'model' && !targetModel) {
       showToast('Please select a target printer model', 'error');
       return;
     }
 
     setIsSubmitting(true);
+
+    if (usesPerPlateConfiguration) {
+      const totalCount = selectedPlateConfigurations.reduce(
+        (count, { config }) =>
+          count + (config.assignmentMode === 'model' ? 1 : config.selectedPrinters.length),
+        0,
+      );
+      setSubmitProgress({ current: 0, total: totalCount });
+      const results: { success: number; failed: number; errors: string[] } = {
+        success: 0,
+        failed: 0,
+        errors: [],
+      };
+      const useStagger = scheduleOptions.staggerEnabled;
+      const staggerBaseTime = useStagger
+        ? (scheduleOptions.scheduleType === 'scheduled' && scheduleOptions.scheduledTime
+          ? new Date(scheduleOptions.scheduledTime).getTime()
+          : Date.now())
+        : 0;
+
+      let progressCounter = 0;
+      for (const { plate, config } of selectedPlateConfigurations) {
+        const snapshot = plateConfigurationRefs.current[plate.index]?.getSnapshot();
+        const printerTargets: Array<number | null> = config.assignmentMode === 'model'
+          ? [null]
+          : config.selectedPrinters;
+
+        for (let printerIndex = 0; printerIndex < printerTargets.length; printerIndex++) {
+          const printerId = printerTargets[printerIndex];
+          progressCounter++;
+          setSubmitProgress({ current: progressCounter, total: totalCount });
+
+          const queueData: PrintQueueItemCreate = {
+            printer_id: printerId,
+            target_model: config.assignmentMode === 'model' ? config.targetModel : null,
+            target_location: config.assignmentMode === 'model' ? config.targetLocation : null,
+            filament_overrides: config.assignmentMode === 'model'
+              ? snapshot?.filamentOverrides
+              : undefined,
+            archive_id: isLibraryFile ? undefined : archiveId,
+            library_file_id: isLibraryFile ? libraryFileId : undefined,
+            require_previous_success: scheduleOptions.requirePreviousSuccess,
+            auto_off_after: scheduleOptions.autoOffAfter,
+            gcode_injection: scheduleOptions.gcodeInjection,
+            manual_start: scheduleOptions.scheduleType === 'manual',
+            ams_mapping: printerId != null
+              ? snapshot?.getMappingForPrinter(printerId)
+              : undefined,
+            plate_id: plate.index,
+            scheduled_time: scheduleOptions.scheduleType === 'scheduled' && scheduleOptions.scheduledTime
+              ? new Date(scheduleOptions.scheduledTime).toISOString()
+              : undefined,
+            ...printOptions,
+            project_id: projectId ?? undefined,
+          };
+
+          if (config.quantity > 1) {
+            queueData.quantity = config.quantity;
+          }
+          if (useStagger && printerId != null) {
+            const groupIndex = Math.floor(printerIndex / scheduleOptions.staggerGroupSize);
+            if (groupIndex > 0) {
+              const offsetMs = groupIndex * scheduleOptions.staggerIntervalMinutes * 60_000;
+              queueData.scheduled_time = new Date(staggerBaseTime + offsetMs).toISOString();
+            }
+          }
+
+          try {
+            await addToQueueMutation.mutateAsync(queueData);
+            results.success++;
+          } catch (error) {
+            results.failed++;
+            const targetName = printerId == null
+              ? `Any ${config.targetModel || 'model'} printer`
+              : printers?.find((printer) => printer.id === printerId)?.name || `Printer ${printerId}`;
+            results.errors.push(`${targetName} (${plate.name || `Plate ${plate.index}`}): ${(error as Error).message}`);
+          }
+        }
+      }
+
+      setIsSubmitting(false);
+      if (results.failed === 0) {
+        showToast(results.success === 1 ? t('queue.printQueued') : t('queue.itemsQueued', { count: results.success }));
+        queryClient.invalidateQueries({ queryKey: ['queue'] });
+        onSuccess?.();
+        onClose();
+      } else if (results.success === 0) {
+        showToast(`Failed: ${results.errors[0]}`, 'error');
+      } else {
+        showToast(`${results.success} succeeded, ${results.failed} failed`, 'error');
+        queryClient.invalidateQueries({ queryKey: ['queue'] });
+      }
+      return;
+    }
+
     // Calculate total API calls: plates × printers (or 1 for model-based)
     const platesToQueue = selectedPlates.size > 1
       ? plates.filter(p => selectedPlates.has(p.index))
@@ -826,10 +1034,18 @@ export function PrintModal({
     }
   };
 
-  const isPending = isSubmitting || updateQueueMutation.isPending;
+  const isPending = isSubmitting || updateQueueMutation.isPending || createTemplateMutation.isPending;
 
   const canSubmit = useMemo(() => {
     if (isPending) return false;
+
+    if (usesPerPlateConfiguration) {
+      return selectedPlateConfigurations.length > 0
+        && selectedPlateConfigurations.every(({ config }) =>
+          config.assignmentMode === 'model'
+            ? !!config.targetModel
+            : config.selectedPrinters.length > 0);
+    }
 
     // Need valid printer/model selection
     if (assignmentMode === 'printer' && selectedPrinters.length === 0) return false;
@@ -842,10 +1058,196 @@ export function PrintModal({
     if (isMultiPlate && selectedPlates.size === 0) return false;
 
     return true;
-  }, [selectedPrinters.length, assignmentMode, targetModel, mode, isMultiPlate, selectedPlates.size, isPending]);
+  }, [
+    selectedPrinters.length,
+    assignmentMode,
+    targetModel,
+    mode,
+    isMultiPlate,
+    selectedPlates.size,
+    isPending,
+    usesPerPlateConfiguration,
+    selectedPlateConfigurations,
+  ]);
 
   // Quantity only applies for single-printer or model-based assignment (not multi-printer)
-  const effectiveQuantity = (assignmentMode === 'printer' && selectedPrinters.length > 1) ? 1 : quantity;
+  const effectiveQuantity = usesPerPlateConfiguration
+    ? 1
+    : (assignmentMode === 'printer' && selectedPrinters.length > 1) ? 1 : quantity;
+
+  type TemplateItemPayload = MultiPrintTemplateCreate['items'][number];
+
+  const buildGlobalFilamentOverrides = () => {
+    const entries: NonNullable<TemplateItemPayload['filament_overrides']> = [];
+    for (const requirement of effectiveFilamentReqs?.filaments ?? []) {
+      const override = filamentOverrides[requirement.slot_id];
+      const forceColor = forceColorMatch[requirement.slot_id] ?? false;
+      if (!override && !forceColor) continue;
+
+      const type = override?.type ?? requirement.type;
+      const color = override?.color ?? requirement.color;
+      entries.push({
+        slot_id: requirement.slot_id,
+        type,
+        color,
+        color_name: getColorName(color),
+        force_color_match: forceColor,
+      });
+    }
+    return entries.length > 0 ? entries : null;
+  };
+
+  const buildTemplateItems = (): TemplateItemPayload[] => {
+    const items: TemplateItemPayload[] = [];
+    const scheduledTime = scheduleOptions.scheduleType === 'scheduled' && scheduleOptions.scheduledTime
+      ? new Date(scheduleOptions.scheduledTime).toISOString()
+      : null;
+
+    const appendCopies = (
+      item: TemplateItemPayload,
+      label: string,
+      itemQuantity: number,
+    ) => {
+      for (let copy = 1; copy <= itemQuantity; copy++) {
+        items.push({
+          ...item,
+          label: itemQuantity > 1 ? `${label} (${copy}/${itemQuantity})` : label,
+        });
+      }
+    };
+
+    const createItem = ({
+      label,
+      plateId,
+      printerId,
+      itemTargetModel,
+      itemTargetLocation,
+      mapping,
+      itemFilamentOverrides,
+      itemQuantity,
+    }: {
+      label: string;
+      plateId: number | null;
+      printerId: number | null;
+      itemTargetModel: string | null;
+      itemTargetLocation: string | null;
+      mapping: number[] | undefined;
+      itemFilamentOverrides: TemplateItemPayload['filament_overrides'];
+      itemQuantity: number;
+    }) => {
+      appendCopies({
+        label,
+        archive_id: isLibraryFile ? null : archiveId ?? null,
+        library_file_id: isLibraryFile ? libraryFileId ?? null : null,
+        plate_id: plateId,
+        printer_id: printerId,
+        target_model: itemTargetModel,
+        target_location: itemTargetLocation,
+        ams_mapping: mapping ?? null,
+        filament_overrides: itemFilamentOverrides ?? null,
+        scheduled_time: scheduledTime,
+        require_previous_success: scheduleOptions.requirePreviousSuccess,
+        auto_off_after: scheduleOptions.autoOffAfter,
+        manual_start: scheduleOptions.scheduleType === 'manual',
+        ...printOptions,
+        use_ams: true,
+        gcode_injection: scheduleOptions.gcodeInjection,
+        project_id: projectId ?? null,
+      }, label, itemQuantity);
+    };
+
+    if (usesPerPlateConfiguration) {
+      for (const { plate, config } of selectedPlateConfigurations) {
+        const snapshot = plateConfigurationRefs.current[plate.index]?.getSnapshot();
+        const plateLabel = plate.name || `Plate ${plate.index}`;
+
+        if (config.assignmentMode === 'model') {
+          createItem({
+            label: `${plateLabel} — Any ${config.targetModel}`,
+            plateId: plate.index,
+            printerId: null,
+            itemTargetModel: config.targetModel,
+            itemTargetLocation: config.targetLocation,
+            mapping: undefined,
+            itemFilamentOverrides: snapshot?.filamentOverrides ?? null,
+            itemQuantity: config.quantity,
+          });
+          continue;
+        }
+
+        for (const printerId of config.selectedPrinters) {
+          const printerName = printers?.find((printer) => printer.id === printerId)?.name || `Printer ${printerId}`;
+          createItem({
+            label: `${plateLabel} — ${printerName}`,
+            plateId: plate.index,
+            printerId,
+            itemTargetModel: null,
+            itemTargetLocation: null,
+            mapping: snapshot?.getMappingForPrinter(printerId),
+            itemFilamentOverrides: null,
+            itemQuantity: config.quantity,
+          });
+        }
+      }
+      return items;
+    }
+
+    const plateLabel = selectedPlateName || (selectedPlate != null ? `Plate ${selectedPlate}` : archiveName);
+    if (assignmentMode === 'model') {
+      createItem({
+        label: `${plateLabel} — Any ${targetModel}`,
+        plateId: selectedPlate,
+        printerId: null,
+        itemTargetModel: targetModel,
+        itemTargetLocation: targetLocation,
+        mapping: undefined,
+        itemFilamentOverrides: buildGlobalFilamentOverrides(),
+        itemQuantity: effectiveQuantity,
+      });
+      return items;
+    }
+
+    for (const printerId of selectedPrinters) {
+      const printerConfig = perPrinterConfigs[printerId];
+      const mapping = selectedPrinters.length > 1 && printerConfig && !printerConfig.useDefault
+        ? multiPrinterMapping.getFinalMapping(printerId)
+        : amsMapping;
+      const printerName = printers?.find((printer) => printer.id === printerId)?.name || `Printer ${printerId}`;
+      createItem({
+        label: `${plateLabel} — ${printerName}`,
+        plateId: selectedPlate,
+        printerId,
+        itemTargetModel: null,
+        itemTargetLocation: null,
+        mapping,
+        itemFilamentOverrides: null,
+        itemQuantity: effectiveQuantity,
+      });
+    }
+    return items;
+  };
+
+  const openTemplateDialog = () => {
+    const baseName = archiveName.replace(/\.gcode\.3mf$|\.3mf$/i, '');
+    setTemplateName(`${baseName} Template`);
+    setTemplateDescription('');
+    setIsTemplateDialogOpen(true);
+  };
+
+  const handleCreateTemplate = () => {
+    const name = templateName.trim();
+    if (!name) return;
+    const items = buildTemplateItems();
+    if (items.length === 0) {
+      showToast(t('multiPrintTemplates.itemRequired'), 'error');
+      return;
+    }
+    createTemplateMutation.mutate({
+      name,
+      description: templateDescription.trim() || null,
+      items,
+    });
+  };
 
   // Modal title and action button text based on mode
   const getModalConfig = () => {
@@ -984,6 +1386,48 @@ export function PrintModal({
               multiSelect={mode === 'add-to-queue'}
             />
 
+            {usesPerPlateConfiguration && (
+              <div className="space-y-3">
+                <div>
+                  <p className="text-sm font-medium text-white">Plate configurations</p>
+                  <p className="text-xs text-bambu-gray">
+                    Printers, filament mapping, and quantity can be configured separately for each plate.
+                  </p>
+                </div>
+                {selectedPlateConfigurations.map(({ plate, config }, index) => (
+                  <PlateConfiguration
+                    key={plate.index}
+                    ref={(node) => {
+                      plateConfigurationRefs.current[plate.index] = node;
+                    }}
+                    plate={plate}
+                    config={config}
+                    onChange={(updates) =>
+                      setPlateConfigurations((previous) => ({
+                        ...previous,
+                        [plate.index]: {
+                          ...(previous[plate.index] ?? config),
+                          ...updates,
+                        },
+                      }))}
+                    archiveId={archiveId}
+                    libraryFileId={libraryFileId}
+                    isLibraryFile={isLibraryFile}
+                    printers={printers || []}
+                    isLoadingPrinters={loadingPrinters}
+                    slicedForModel={slicedForModel}
+                    preferLowestFilament={settings?.prefer_lowest_filament}
+                    defaultExpanded={index === selectedPlateConfigurations.length - 1}
+                    mappingDefaultExpanded={settings?.per_printer_mapping_expanded ?? false}
+                    currencySymbol={currencySymbol}
+                    defaultCostPerKg={defaultCostPerKg}
+                  />
+                ))}
+              </div>
+            )}
+
+            {!usesPerPlateConfiguration && (
+              <>
             {/* Printer selection with per-printer mapping — hidden when printer is pre-selected via props */}
             {!initialSelectedPrinterIds?.length && (
               <PrinterSelector
@@ -1060,14 +1504,16 @@ export function PrintModal({
                 defaultCostPerKg={defaultCostPerKg}
               />
             )}
+              </>
+            )}
 
             {/* Print options */}
-            {(mode === 'reprint' || effectivePrinterCount > 0 || (assignmentMode === 'model' && targetModel)) && (
+            {(mode === 'reprint' || hasConfiguredPrinter || (assignmentMode === 'model' && targetModel)) && (
               <PrintOptionsPanel options={printOptions} onChange={setPrintOptions} defaultExpanded={!!initialSelectedPrinterIds?.length} />
             )}
 
             {/* Quantity — create multiple copies (batch). Hidden for multi-printer selection. */}
-            {mode !== 'edit-queue-item' && (assignmentMode === 'model' || selectedPrinters.length <= 1) && (
+            {!usesPerPlateConfiguration && mode !== 'edit-queue-item' && (assignmentMode === 'model' || selectedPrinters.length <= 1) && (
               <div className="flex items-center gap-3">
                 <label htmlFor="printQuantity" className="text-sm text-bambu-gray whitespace-nowrap">
                   {t('queue.quantity', 'Quantity')}
@@ -1135,8 +1581,13 @@ export function PrintModal({
                 dateFormat={settings?.date_format || 'system'}
                 timeFormat={settings?.time_format || 'system'}
                 canControlPrinter={hasPermission('printers:control')}
-                showStagger={mode === 'add-to-queue' && assignmentMode === 'printer' && selectedPrinters.length > 1}
-                printerCount={selectedPrinters.length}
+                showStagger={
+                  mode === 'add-to-queue'
+                  && (usesPerPlateConfiguration
+                    ? maximumConfiguredPrinterCount > 1
+                    : assignmentMode === 'printer' && selectedPrinters.length > 1)
+                }
+                printerCount={maximumConfiguredPrinterCount}
                 hasGcodeSnippets={!!settings?.gcode_snippets}
               />
             )}
@@ -1166,10 +1617,22 @@ export function PrintModal({
             )}
 
             {/* Actions */}
-            <div className={`flex gap-3 ${mode === 'reprint' ? '' : 'pt-2'}`}>
-              <Button type="button" variant="secondary" onClick={onClose} className="flex-1" disabled={isSubmitting}>
+            <div className={`flex flex-wrap gap-3 ${mode === 'reprint' ? '' : 'pt-2'}`}>
+              <Button type="button" variant="secondary" onClick={onClose} className="flex-1" disabled={isPending}>
                 Cancel
               </Button>
+              {mode === 'add-to-queue' && (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={openTemplateDialog}
+                  disabled={!canSubmit}
+                  className="flex-1"
+                >
+                  <Save className="w-4 h-4" />
+                  Create Template
+                </Button>
+              )}
               <Button
                 type="submit"
                 disabled={!canSubmit}
@@ -1191,6 +1654,79 @@ export function PrintModal({
           </form>
         </CardContent>
       </Card>
+
+      {isTemplateDialogOpen && (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/70"
+          onClick={(event) => {
+            event.stopPropagation();
+            if (!createTemplateMutation.isPending) setIsTemplateDialogOpen(false);
+          }}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="create-template-title"
+            className="w-full max-w-md p-5 space-y-4 border rounded-xl border-bambu-dark-tertiary bg-bambu-dark-secondary"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div>
+              <h3 id="create-template-title" className="text-lg font-semibold text-white">
+                Create Template
+              </h3>
+              <p className="mt-1 text-sm text-bambu-gray">
+                Save the selected plates and their current configuration as a reusable template.
+              </p>
+            </div>
+            <div>
+              <label htmlFor="scheduleTemplateName" className="block mb-1 text-sm text-bambu-gray">
+                {t('multiPrintTemplates.nameLabel')}
+              </label>
+              <input
+                id="scheduleTemplateName"
+                autoFocus
+                value={templateName}
+                onChange={(event) => setTemplateName(event.target.value)}
+                className="w-full px-3 py-2 text-white border rounded-lg bg-bambu-dark border-bambu-dark-tertiary focus:outline-none focus:ring-1 focus:ring-bambu-green"
+              />
+            </div>
+            <div>
+              <label htmlFor="scheduleTemplateDescription" className="block mb-1 text-sm text-bambu-gray">
+                {t('multiPrintTemplates.descriptionLabel')}
+              </label>
+              <textarea
+                id="scheduleTemplateDescription"
+                rows={3}
+                value={templateDescription}
+                onChange={(event) => setTemplateDescription(event.target.value)}
+                className="w-full px-3 py-2 text-white border rounded-lg resize-none bg-bambu-dark border-bambu-dark-tertiary focus:outline-none focus:ring-1 focus:ring-bambu-green"
+              />
+            </div>
+            <div className="flex gap-3">
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => setIsTemplateDialogOpen(false)}
+                disabled={createTemplateMutation.isPending}
+                className="flex-1"
+              >
+                {t('common.cancel')}
+              </Button>
+              <Button
+                type="button"
+                onClick={handleCreateTemplate}
+                disabled={!templateName.trim() || createTemplateMutation.isPending}
+                className="flex-1"
+              >
+                {createTemplateMutation.isPending
+                  ? <Loader2 className="w-4 h-4 animate-spin" />
+                  : <Save className="w-4 h-4" />}
+                Create Template
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {filamentWarningItems && filamentWarningItems.length > 0 && (
         <ConfirmModal

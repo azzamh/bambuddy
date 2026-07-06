@@ -1,6 +1,12 @@
 import { useQuery, useQueries } from '@tanstack/react-query';
 import { api } from '../api/client';
 
+interface FormItemLookupInput {
+  archive_id: string;
+  library_file_id: string;
+  printer_id: string;
+}
+
 export function useMultiPrintTemplateQueries() {
   const { data: templates = [], isLoading } = useQuery({
     queryKey: ['multi-print-templates'],
@@ -81,8 +87,8 @@ export function useItemDetailsQueries(isItemModalOpen: boolean, itemArchiveId?: 
   };
 }
 
-export function useFormItemsDetailsQueries(formItems: any[]) {
-  // Fetch details for items shown in the form list (archives, library files, printers)
+export function useFormItemsDetailsQueries(formItems: FormItemLookupInput[]) {
+  // Fetch details for items shown in the form list (sources, plates, and printers)
   const archiveIds = Array.from(new Set(formItems.map((it) => it.archive_id).filter(Boolean).map((id) => Number(id))));
   const libraryFileIds = Array.from(new Set(formItems.map((it) => it.library_file_id).filter(Boolean).map((id) => Number(id))));
   const printerIds = Array.from(new Set(formItems.map((it) => it.printer_id).filter(Boolean).map((id) => Number(id))));
@@ -103,6 +109,22 @@ export function useFormItemsDetailsQueries(formItems: any[]) {
     })),
   });
 
+  const archivePlateQueries = useQueries({
+    queries: archiveIds.map((id) => ({
+      queryKey: ['archive-plates', id],
+      queryFn: () => api.getArchivePlates(id),
+      enabled: Boolean(id),
+    })),
+  });
+
+  const libraryFilePlateQueries = useQueries({
+    queries: libraryFileIds.map((id) => ({
+      queryKey: ['library-file-plates', id],
+      queryFn: () => api.getLibraryFilePlates(id),
+      enabled: Boolean(id),
+    })),
+  });
+
   const printerStatusQueries = useQueries({
     queries: printerIds.map((id) => ({
       queryKey: ['multi-print-template-printer-status', id],
@@ -114,10 +136,15 @@ export function useFormItemsDetailsQueries(formItems: any[]) {
   const archivesById = Object.fromEntries(archiveQueries.map((q, i) => [archiveIds[i], q.data]));
   const libraryFilesById = Object.fromEntries(libraryFileQueries.map((q, i) => [libraryFileIds[i], q.data]));
   const printersById = Object.fromEntries(printerStatusQueries.map((q, i) => [printerIds[i], q.data]));
+  const platesBySource = {
+    ...Object.fromEntries(archivePlateQueries.map((q, i) => [`archive:${archiveIds[i]}`, q.data])),
+    ...Object.fromEntries(libraryFilePlateQueries.map((q, i) => [`library:${libraryFileIds[i]}`, q.data])),
+  };
 
   return {
     archivesById,
     libraryFilesById,
     printersById,
+    platesBySource,
   };
 }

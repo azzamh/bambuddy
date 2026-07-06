@@ -8,7 +8,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { screen, waitFor } from '@testing-library/react';
+import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { render } from '../utils';
 import { PrintModal } from '../../components/PrintModal';
@@ -998,7 +998,8 @@ describe('PrintModal', () => {
       // Select printer
       await user.click(screen.getByText('X1 Carbon'));
 
-      // Plate 1 is auto-selected. Click Plate 3 to add it (multi-select in add-to-queue mode)
+      // Select a subset of plates.
+      await user.click(screen.getByText('Plate 1'));
       await user.click(screen.getByText('Plate 3'));
 
       // Submit — should queue plates 1 and 3
@@ -1011,6 +1012,198 @@ describe('PrintModal', () => {
 
       expect((queueRequests[0] as { plate_id: number }).plate_id).toBe(1);
       expect((queueRequests[1] as { plate_id: number }).plate_id).toBe(3);
+    });
+
+    it('keeps assignment mode, filament mapping, and quantity independent for each selected plate', async () => {
+      const queueRequests: Array<{
+        plate_id: number;
+        printer_id: number | null;
+        target_model?: string | null;
+        quantity?: number;
+      }> = [];
+      server.use(
+        http.get('/api/v1/archives/:id', () => {
+          return HttpResponse.json({ sliced_for_model: 'X1C' });
+        }),
+        http.get('/api/v1/archives/:id/filament-requirements', () => {
+          return HttpResponse.json({
+            filaments: [{
+              slot_id: 1,
+              type: 'PLA',
+              color: '#FF0000',
+              used_grams: 10,
+              used_meters: 3,
+            }],
+          });
+        }),
+        http.get('/api/v1/printers/available-filaments', () => {
+          return HttpResponse.json([{
+            type: 'PLA',
+            color: '#FF0000',
+            tray_info_idx: 'GFA00',
+            tray_sub_brands: 'PLA Basic',
+            extruder_id: null,
+          }]);
+        }),
+        http.post('/api/v1/queue/', async ({ request }) => {
+          const body = await request.json() as {
+            plate_id: number;
+            printer_id: number | null;
+            target_model?: string | null;
+            quantity?: number;
+          };
+          queueRequests.push(body);
+          return HttpResponse.json({ id: queueRequests.length, status: 'pending' });
+        }),
+      );
+
+      const user = userEvent.setup();
+      render(
+        <PrintModal
+          mode="add-to-queue"
+          archiveId={1}
+          archiveName="MultiPlate.3mf"
+          onClose={mockOnClose}
+          onSuccess={mockOnSuccess}
+        />
+      );
+
+      await waitFor(() => {
+        expect(screen.getByText('Select All 3 Plates')).toBeInTheDocument();
+      });
+      await user.click(screen.getByText('Plate 1'));
+      await user.click(screen.getByText('Plate 2'));
+
+      expect(screen.getByText('Plate configurations')).toBeInTheDocument();
+      const plateOneToggle = screen.getByRole('button', { name: /Plate 1.*Quantity 1/i });
+      expect(plateOneToggle).toHaveAttribute('aria-expanded', 'true');
+      await user.click(plateOneToggle);
+      expect(plateOneToggle).toHaveAttribute('aria-expanded', 'false');
+      await user.click(plateOneToggle);
+
+      const plateOnePanel = document.getElementById('plate-configuration-1');
+      const plateTwoPanel = document.getElementById('plate-configuration-2');
+      expect(plateOnePanel).not.toBeNull();
+      expect(plateTwoPanel).not.toBeNull();
+
+      await user.click(within(plateOnePanel!).getByText('X1 Carbon'));
+      await user.click(within(plateTwoPanel!).getByRole('button', { name: 'Any X1C' }));
+      await user.click(screen.getByLabelText('Quantity for Plate 1'));
+      await user.keyboard('{Control>}a{/Control}2');
+      await user.click(screen.getByLabelText('Quantity for Plate 2'));
+      await user.keyboard('{Control>}a{/Control}3');
+
+      await waitFor(() => {
+        expect(screen.getByText('Filament Mapping')).toBeInTheDocument();
+        expect(screen.getByText('Filament Override')).toBeInTheDocument();
+        expect(screen.getByText(/Any X1C printer/)).toBeInTheDocument();
+      });
+
+      const submitButton = document.querySelector('button[type="submit"]') as HTMLElement;
+      await user.click(submitButton);
+
+      await waitFor(() => {
+        expect(queueRequests).toHaveLength(2);
+      });
+      expect(queueRequests).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          plate_id: 1,
+          printer_id: 1,
+          target_model: null,
+          quantity: 2,
+        }),
+        expect.objectContaining({
+          plate_id: 2,
+          printer_id: null,
+          target_model: 'X1C',
+          quantity: 3,
+        }),
+      ]));
+    });
+
+    it('creates a reusable template from the selected plate configurations', async () => {
+      let templateRequest: {
+        name: string;
+        description: string | null;
+        items: Array<{
+          plate_id: number;
+          printer_id: number | null;
+          target_model: string | null;
+          label: string;
+        }>;
+      } | null = null;
+      server.use(
+        http.get('/api/v1/archives/:id', () => {
+          return HttpResponse.json({ sliced_for_model: 'X1C' });
+        }),
+        http.get('/api/v1/archives/:id/filament-requirements', () => {
+          return HttpResponse.json({ filaments: [] });
+        }),
+        http.post('/api/v1/multi-print-templates/', async ({ request }) => {
+          templateRequest = await request.json() as typeof templateRequest;
+          return HttpResponse.json({
+            id: 1,
+            name: templateRequest?.name,
+            description: templateRequest?.description,
+            items: templateRequest?.items,
+          });
+        }),
+      );
+
+      const user = userEvent.setup();
+      render(
+        <PrintModal
+          mode="add-to-queue"
+          archiveId={1}
+          archiveName="MultiPlate.3mf"
+          onClose={mockOnClose}
+          onSuccess={mockOnSuccess}
+        />
+      );
+
+      await waitFor(() => {
+        expect(screen.getByText('Select All 3 Plates')).toBeInTheDocument();
+      });
+      await user.click(screen.getByText('Plate 1'));
+      await user.click(screen.getByText('Plate 2'));
+
+      const plateOnePanel = document.getElementById('plate-configuration-1');
+      const plateTwoPanel = document.getElementById('plate-configuration-2');
+      expect(plateOnePanel).not.toBeNull();
+      expect(plateTwoPanel).not.toBeNull();
+      await user.click(within(plateOnePanel!).getByText('X1 Carbon'));
+      await waitFor(() => {
+        expect(within(plateTwoPanel!).getByRole('button', { name: 'Any X1C' })).toBeInTheDocument();
+      });
+      await user.click(within(plateTwoPanel!).getByRole('button', { name: 'Any X1C' }));
+
+      await user.click(screen.getByLabelText('Quantity for Plate 1'));
+      await user.keyboard('{Control>}a{/Control}2');
+      await user.click(screen.getByLabelText('Quantity for Plate 2'));
+      await user.keyboard('{Control>}a{/Control}3');
+
+      await user.click(screen.getByRole('button', { name: 'Create Template' }));
+      const dialog = screen.getByRole('dialog', { name: 'Create Template' });
+      const nameInput = within(dialog).getByLabelText('Template name');
+      await user.clear(nameInput);
+      await user.type(nameInput, 'Mixed Plate Template');
+      await user.type(within(dialog).getByLabelText('Description'), 'Saved from Schedule Print');
+      await user.click(within(dialog).getByRole('button', { name: 'Create Template' }));
+
+      await waitFor(() => {
+        expect(templateRequest).not.toBeNull();
+      });
+      expect(templateRequest).toMatchObject({
+        name: 'Mixed Plate Template',
+        description: 'Saved from Schedule Print',
+      });
+      expect(templateRequest!.items).toHaveLength(5);
+      expect(templateRequest!.items.filter((item) =>
+        item.plate_id === 1 && item.printer_id === 1 && item.target_model === null
+      )).toHaveLength(2);
+      expect(templateRequest!.items.filter((item) =>
+        item.plate_id === 2 && item.printer_id === null && item.target_model === 'X1C'
+      )).toHaveLength(3);
     });
 
     it('creates one queue item per plate when submitting with select-all', async () => {

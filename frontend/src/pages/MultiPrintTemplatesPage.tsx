@@ -146,7 +146,7 @@ export function MultiPrintTemplatesPage() {
     enabled: isItemModalOpen && Boolean(itemDraft?.archive_id || itemDraft?.library_file_id),
   });
 
-  const { archivesById, libraryFilesById, printersById } = useFormItemsDetailsQueries(formItems);
+  const { archivesById, libraryFilesById, printersById, platesBySource } = useFormItemsDetailsQueries(formItems);
 
   const canManageTemplates = hasPermission('queue:update_all');
   const canRunTemplates = hasPermission('queue:create');
@@ -605,11 +605,27 @@ export function MultiPrintTemplatesPage() {
         formItems={formItems}
         onAddItem={() => openItemModal()}
         onEditItem={openItemModal}
-        onRemoveItem={(idx) => setFormItems(formItems.filter((_: FormItem, i: number) => i !== idx))}
+        onDuplicateItem={(idx) => {
+          setFormItems((previous) => {
+            const source = previous[idx];
+            if (!source) return previous;
+            const duplicate = {
+              ...source,
+              label: source.label ? `${source.label} (Copy)` : '',
+            };
+            const next = [...previous];
+            next.splice(idx + 1, 0, duplicate);
+            return next;
+          });
+        }}
+        onRemoveItem={(idx) => {
+          setFormItems((previous) => previous.filter((_: FormItem, i: number) => i !== idx));
+        }}
         formErrors={formErrors}
         archivesById={archivesById}
         libraryFilesById={libraryFilesById}
         printersById={printersById}
+        platesBySource={platesBySource}
         onSave={handleFormSave}
         onCancel={() => {
           setFormTemplate(null);
