@@ -40,6 +40,29 @@ import type {
 } from './types';
 import { DEFAULT_PRINT_OPTIONS, DEFAULT_SCHEDULE_OPTIONS } from './types';
 
+const normalizeForStableJson = (value: unknown): unknown => {
+  if (Array.isArray(value)) {
+    return value.map(normalizeForStableJson);
+  }
+  if (value && typeof value === 'object') {
+    return Object.keys(value as Record<string, unknown>)
+      .sort()
+      .reduce<Record<string, unknown>>((acc, key) => {
+        const item = (value as Record<string, unknown>)[key];
+        if (item !== undefined) {
+          acc[key] = normalizeForStableJson(item);
+        }
+        return acc;
+      }, {});
+  }
+  return value;
+};
+
+const buildQueueSubmissionKey = (data: PrintQueueItemCreate) => {
+  const { scheduled_time: _scheduledTime, ...stableData } = data;
+  return JSON.stringify(normalizeForStableJson(stableData));
+};
+
 /**
  * Unified PrintModal component that handles three modes:
  * - 'reprint': Immediate print from archive or library file (supports multi-printer)
@@ -204,7 +227,7 @@ export function PrintModal({
     return {};
   });
 
-  // Per-slot force color match flags. Default is false (opt-in).
+  // Per-slot force color match flags. New model-based queue submissions default to true.
   const [forceColorMatch, setForceColorMatch] = useState<Record<number, boolean>>(() => {
     if (mode === 'edit-queue-item' && queueItem?.filament_overrides) {
       const flags: Record<number, boolean> = {};
@@ -223,6 +246,7 @@ export function PrintModal({
   // Submission state for multi-printer
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitProgress, setSubmitProgress] = useState({ current: 0, total: 0 });
+  const [completedQueueSubmissionKeys, setCompletedQueueSubmissionKeys] = useState<Set<string>>(new Set());
   const [isTemplateDialogOpen, setIsTemplateDialogOpen] = useState(false);
   const [templateName, setTemplateName] = useState('');
   const [templateDescription, setTemplateDescription] = useState('');
@@ -419,6 +443,23 @@ export function PrintModal({
       }
     }
   }, [targetModel, selectedPlate, prevTargetModel, prevPlateForOverrides, mode]);
+
+  useEffect(() => {
+    if (mode === 'edit-queue-item') return;
+    if (assignmentMode !== 'model' || !targetModel || !effectiveFilamentReqs?.filaments?.length) return;
+
+    setForceColorMatch((previous) => {
+      let changed = false;
+      const next = { ...previous };
+      for (const requirement of effectiveFilamentReqs.filaments) {
+        if (next[requirement.slot_id] === undefined) {
+          next[requirement.slot_id] = true;
+          changed = true;
+        }
+      }
+      return changed ? next : previous;
+    });
+  }, [mode, assignmentMode, targetModel, targetLocation, effectiveFilamentReqs]);
 
   // Auto-expand per-printer mapping when setting is enabled and multiple printers selected
   // Only applies once per printer on initial selection, not when user unchecks
@@ -688,25 +729,20 @@ export function PrintModal({
     setIsSubmitting(true);
 
     if (usesPerPlateConfiguration) {
-      const totalCount = selectedPlateConfigurations.reduce(
-        (count, { config }) =>
-          count + (config.assignmentMode === 'model' ? 1 : config.selectedPrinters.length),
-        0,
-      );
-      setSubmitProgress({ current: 0, total: totalCount });
-      const results: { success: number; failed: number; errors: string[] } = {
-        success: 0,
-        failed: 0,
-        errors: [],
-      };
       const useStagger = scheduleOptions.staggerEnabled;
       const staggerBaseTime = useStagger
         ? (scheduleOptions.scheduleType === 'scheduled' && scheduleOptions.scheduledTime
           ? new Date(scheduleOptions.scheduledTime).getTime()
           : Date.now())
         : 0;
+      const submissions: Array<{
+        key: string;
+        queueData: PrintQueueItemCreate;
+        plateIndex: number;
+        plateName: string;
+        targetName: string;
+      }> = [];
 
-      let progressCounter = 0;
       for (const { plate, config } of selectedPlateConfigurations) {
         const snapshot = plateConfigurationRefs.current[plate.index]?.getSnapshot();
         const printerTargets: Array<number | null> = config.assignmentMode === 'model'
@@ -715,9 +751,6 @@ export function PrintModal({
 
         for (let printerIndex = 0; printerIndex < printerTargets.length; printerIndex++) {
           const printerId = printerTargets[printerIndex];
-          progressCounter++;
-          setSubmitProgress({ current: progressCounter, total: totalCount });
-
           const queueData: PrintQueueItemCreate = {
             printer_id: printerId,
             target_model: config.assignmentMode === 'model' ? config.targetModel : null,
@@ -753,16 +786,49 @@ export function PrintModal({
             }
           }
 
-          try {
-            await addToQueueMutation.mutateAsync(queueData);
-            results.success++;
-          } catch (error) {
-            results.failed++;
-            const targetName = printerId == null
+          const key = buildQueueSubmissionKey(queueData);
+          if (completedQueueSubmissionKeys.has(key)) continue;
+
+          submissions.push({
+            key,
+            queueData,
+            plateIndex: plate.index,
+            plateName: plate.name || `Plate ${plate.index}`,
+            targetName: printerId == null
               ? `Any ${config.targetModel || 'model'} printer`
-              : printers?.find((printer) => printer.id === printerId)?.name || `Printer ${printerId}`;
-            results.errors.push(`${targetName} (${plate.name || `Plate ${plate.index}`}): ${(error as Error).message}`);
-          }
+              : printers?.find((printer) => printer.id === printerId)?.name || `Printer ${printerId}`,
+          });
+        }
+      }
+
+      if (submissions.length === 0) {
+        setIsSubmitting(false);
+        showToast('No failed queue items left to retry', 'error');
+        return;
+      }
+
+      setSubmitProgress({ current: 0, total: submissions.length });
+      const results: { success: number; failed: number; errors: string[] } = {
+        success: 0,
+        failed: 0,
+        errors: [],
+      };
+      const successfulKeys = new Set<string>();
+      const failedPlateIndexes = new Set<number>();
+
+      let progressCounter = 0;
+      for (const submission of submissions) {
+        progressCounter++;
+        setSubmitProgress({ current: progressCounter, total: submissions.length });
+
+        try {
+          await addToQueueMutation.mutateAsync(submission.queueData);
+          successfulKeys.add(submission.key);
+          results.success++;
+        } catch (error) {
+          failedPlateIndexes.add(submission.plateIndex);
+          results.failed++;
+          results.errors.push(`${submission.targetName} (${submission.plateName}): ${(error as Error).message}`);
         }
       }
 
@@ -777,6 +843,8 @@ export function PrintModal({
       } else {
         showToast(`${results.success} succeeded, ${results.failed} failed`, 'error');
         queryClient.invalidateQueries({ queryKey: ['queue'] });
+        setCompletedQueueSubmissionKeys((previous) => new Set([...previous, ...successfulKeys]));
+        setSelectedPlates(new Set(failedPlateIndexes));
       }
       return;
     }
@@ -818,7 +886,7 @@ export function PrintModal({
       if (effectiveFilamentReqs?.filaments) {
         for (const req of effectiveFilamentReqs.filaments) {
           const userOverride = filamentOverrides[req.slot_id];
-          const isForceColor = forceColorMatch[req.slot_id] ?? false;
+          const isForceColor = forceColorMatch[req.slot_id] ?? (mode !== 'edit-queue-item');
           const effectiveType = userOverride?.type ?? req.type;
           const effectiveColor = userOverride?.color ?? req.color;
 
@@ -831,7 +899,7 @@ export function PrintModal({
         // Fallback: no filament requirements data — only include explicit user overrides
         for (const [slotId, { type, color }] of Object.entries(filamentOverrides)) {
           const id = parseInt(slotId, 10);
-          const isForceColor = forceColorMatch[id] ?? false;
+          const isForceColor = forceColorMatch[id] ?? (mode !== 'edit-queue-item');
           entries.push({ slot_id: id, type, color, color_name: getColorName(color), force_color_match: isForceColor });
         }
       }
@@ -1081,7 +1149,7 @@ export function PrintModal({
     const entries: NonNullable<TemplateItemPayload['filament_overrides']> = [];
     for (const requirement of effectiveFilamentReqs?.filaments ?? []) {
       const override = filamentOverrides[requirement.slot_id];
-      const forceColor = forceColorMatch[requirement.slot_id] ?? false;
+      const forceColor = forceColorMatch[requirement.slot_id] ?? (mode !== 'edit-queue-item');
       if (!override && !forceColor) continue;
 
       const type = override?.type ?? requirement.type;

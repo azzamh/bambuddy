@@ -163,7 +163,7 @@ export const PlateConfiguration = forwardRef<PlateConfigurationHandle, PlateConf
       const entries: NonNullable<PlateConfigurationSnapshot['filamentOverrides']> = [];
       for (const requirement of filamentReqs?.filaments ?? []) {
         const override = config.filamentOverrides[requirement.slot_id];
-        const forceColor = config.forceColorMatch[requirement.slot_id] ?? false;
+        const forceColor = config.forceColorMatch[requirement.slot_id] ?? true;
         if (!override && !forceColor) continue;
 
         const type = override?.type ?? requirement.type;
@@ -204,6 +204,30 @@ export const PlateConfiguration = forwardRef<PlateConfigurationHandle, PlateConf
         onChange({ selectedPrinters: [activePrinters[0].id] });
       }
     }, [config, onChange, printers]);
+
+    useEffect(() => {
+      if (config.assignmentMode !== 'model' || !config.targetModel || !filamentReqs?.filaments?.length) return;
+
+      let changed = false;
+      const next = { ...config.forceColorMatch };
+      for (const requirement of filamentReqs.filaments) {
+        if (next[requirement.slot_id] === undefined) {
+          next[requirement.slot_id] = true;
+          changed = true;
+        }
+      }
+
+      if (changed) {
+        onChange({ forceColorMatch: next });
+      }
+    }, [
+      config.assignmentMode,
+      config.forceColorMatch,
+      config.targetLocation,
+      config.targetModel,
+      filamentReqs,
+      onChange,
+    ]);
 
     const selectedPrinterNames = config.selectedPrinters
       .map((printerId) => printers.find((printer) => printer.id === printerId)?.name)

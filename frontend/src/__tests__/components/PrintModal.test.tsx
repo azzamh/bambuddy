@@ -339,6 +339,69 @@ describe('PrintModal', () => {
 
       expect(mockOnClose).toHaveBeenCalled();
     });
+
+    it('defaults force color match on for model-based queueing', async () => {
+      let queueRequest: {
+        target_model?: string | null;
+        filament_overrides?: Array<{ slot_id: number; force_color_match?: boolean }>;
+      } | null = null;
+      server.use(
+        http.get('/api/v1/archives/:id', () => {
+          return HttpResponse.json({ sliced_for_model: 'X1C' });
+        }),
+        http.get('/api/v1/archives/:id/filament-requirements', () => {
+          return HttpResponse.json({
+            filaments: [{
+              slot_id: 1,
+              type: 'PLA',
+              color: '#FF0000',
+              used_grams: 10,
+              used_meters: 3,
+            }],
+          });
+        }),
+        http.get('/api/v1/printers/available-filaments', () => {
+          return HttpResponse.json([{
+            type: 'PLA',
+            color: '#FF0000',
+            tray_info_idx: 'GFA00',
+            tray_sub_brands: 'PLA Basic',
+            extruder_id: null,
+          }]);
+        }),
+        http.post('/api/v1/queue/', async ({ request }) => {
+          queueRequest = await request.json() as typeof queueRequest;
+          return HttpResponse.json({ id: 1, status: 'pending' });
+        }),
+      );
+
+      const user = userEvent.setup();
+      render(
+        <PrintModal
+          mode="add-to-queue"
+          archiveId={1}
+          archiveName="Test Print"
+          onClose={mockOnClose}
+          onSuccess={mockOnSuccess}
+        />
+      );
+
+      await user.click(await screen.findByRole('button', { name: 'Any X1C' }));
+
+      await waitFor(() => {
+        expect(screen.getByLabelText(/force color match/i)).toBeChecked();
+      });
+
+      await user.click(screen.getByRole('button', { name: /add to queue/i }));
+
+      await waitFor(() => {
+        expect(queueRequest).not.toBeNull();
+      });
+      expect(queueRequest).toMatchObject({
+        target_model: 'X1C',
+        filament_overrides: [expect.objectContaining({ slot_id: 1, force_color_match: true })],
+      });
+    });
   });
 
   describe('edit-queue-item mode', () => {
@@ -1014,12 +1077,65 @@ describe('PrintModal', () => {
       expect((queueRequests[1] as { plate_id: number }).plate_id).toBe(3);
     });
 
+    it('retries only failed plates after a partial queue failure', async () => {
+      const queueRequests: Array<{ plate_id: number }> = [];
+      let shouldFailPlateTwo = true;
+      server.use(
+        http.post('/api/v1/queue/', async ({ request }) => {
+          const body = await request.json() as { plate_id: number };
+          queueRequests.push(body);
+          if (body.plate_id === 2 && shouldFailPlateTwo) {
+            shouldFailPlateTwo = false;
+            return HttpResponse.json({ detail: 'Plate 2 failed' }, { status: 500 });
+          }
+          return HttpResponse.json({ id: queueRequests.length, status: 'pending' });
+        }),
+      );
+
+      const user = userEvent.setup();
+      render(
+        <PrintModal
+          mode="add-to-queue"
+          archiveId={1}
+          archiveName="MultiPlate.3mf"
+          onClose={mockOnClose}
+          onSuccess={mockOnSuccess}
+        />
+      );
+
+      await waitFor(() => {
+        expect(screen.getByText('Select All 3 Plates')).toBeInTheDocument();
+        expect(screen.getByText('X1 Carbon')).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByText('X1 Carbon'));
+      await user.click(screen.getByText('Plate 1'));
+      await user.click(screen.getByText('Plate 2'));
+
+      await user.click(document.querySelector('button[type="submit"]') as HTMLElement);
+
+      await waitFor(() => {
+        expect(queueRequests.map((request) => request.plate_id)).toEqual([1, 2]);
+      });
+      expect(mockOnClose).not.toHaveBeenCalled();
+
+      await waitFor(() => {
+        expect(document.querySelector('button[type="submit"]')).not.toBeDisabled();
+      });
+      await user.click(document.querySelector('button[type="submit"]') as HTMLElement);
+
+      await waitFor(() => {
+        expect(queueRequests.map((request) => request.plate_id)).toEqual([1, 2, 2]);
+      });
+    });
+
     it('keeps assignment mode, filament mapping, and quantity independent for each selected plate', async () => {
       const queueRequests: Array<{
         plate_id: number;
         printer_id: number | null;
         target_model?: string | null;
         quantity?: number;
+        filament_overrides?: Array<{ force_color_match?: boolean }>;
       }> = [];
       server.use(
         http.get('/api/v1/archives/:id', () => {
@@ -1051,6 +1167,7 @@ describe('PrintModal', () => {
             printer_id: number | null;
             target_model?: string | null;
             quantity?: number;
+            filament_overrides?: Array<{ force_color_match?: boolean }>;
           };
           queueRequests.push(body);
           return HttpResponse.json({ id: queueRequests.length, status: 'pending' });
@@ -1098,6 +1215,7 @@ describe('PrintModal', () => {
         expect(screen.getByText('Filament Override')).toBeInTheDocument();
         expect(screen.getByText(/Any X1C printer/)).toBeInTheDocument();
       });
+      expect(within(plateTwoPanel!).getByLabelText(/force color match/i)).toBeChecked();
 
       const submitButton = document.querySelector('button[type="submit"]') as HTMLElement;
       await user.click(submitButton);
@@ -1117,6 +1235,7 @@ describe('PrintModal', () => {
           printer_id: null,
           target_model: 'X1C',
           quantity: 3,
+          filament_overrides: [expect.objectContaining({ force_color_match: true })],
         }),
       ]));
     });
