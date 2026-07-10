@@ -495,7 +495,12 @@ async def create_backup_zip(output_path: Path | None = None) -> tuple[Path, str]
             os.close(fd)
             zip_file = Path(tmp)
 
-        with zipfile.ZipFile(zip_file, "w", zipfile.ZIP_DEFLATED) as zf:
+        with zipfile.ZipFile(
+            zip_file,
+            "w",
+            zipfile.ZIP_DEFLATED,
+            strict_timestamps=False,
+        ) as zf:
             for file_path in temp_path.rglob("*"):
                 if file_path.is_file():
                     arcname = file_path.relative_to(temp_path)

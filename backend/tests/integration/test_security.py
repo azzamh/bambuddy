@@ -1923,6 +1923,33 @@ class TestBackupKeyFiles:
 
     @pytest.mark.asyncio
     @pytest.mark.integration
+    async def test_backup_clamps_pre_1980_file_timestamps(self, async_client, monkeypatch, tmp_path):
+        import os
+        import zipfile
+
+        from backend.app.api.routes.settings import create_backup_zip
+        from backend.app.core.config import settings as app_settings
+
+        monkeypatch.setenv("DATA_DIR", str(tmp_path))
+        monkeypatch.setattr(app_settings, "base_dir", tmp_path)
+
+        archive_dir = tmp_path / "archive"
+        archive_dir.mkdir()
+        legacy_file = archive_dir / "legacy.txt"
+        legacy_file.write_text("legacy backup content")
+        os.utime(legacy_file, (0, 0))
+
+        zip_path, _filename = await create_backup_zip(output_path=tmp_path)
+        try:
+            with zipfile.ZipFile(zip_path) as zf:
+                assert zf.read("archive/legacy.txt").decode() == "legacy backup content"
+                info = zf.getinfo("archive/legacy.txt")
+                assert info.date_time >= (1980, 1, 1, 0, 0, 0)
+        finally:
+            zip_path.unlink(missing_ok=True)
+
+    @pytest.mark.asyncio
+    @pytest.mark.integration
     async def test_restore_writes_key_files_with_chmod_0600(self, async_client, monkeypatch, tmp_path):
         """T1: restore endpoint writes key file with mode 0o600.
 
