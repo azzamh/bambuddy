@@ -2889,7 +2889,7 @@ function PrinterCard({
                             </div>
                             <span className="text-white">{Math.round(status.progress || 0)}%</span>
                           </div>
-                          <div className="flex items-center gap-3 mt-2 text-xs text-bambu-gray">
+                          <div className="flex flex-wrap items-center gap-3 mt-2 text-xs text-bambu-gray">
                             {status.remaining_time != null && status.remaining_time > 0 && (
                               <>
                                 <span className="flex items-center gap-1">
