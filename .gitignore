@@ -88,3 +88,5 @@ file-manager-data/*
 
 # Large data files
 bambuddy_data/*
+bambuddy_pgdata/*
+!bambuddy_pgdata/.gitkeep

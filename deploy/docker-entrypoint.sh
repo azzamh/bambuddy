@@ -24,12 +24,30 @@
 
 set -eu
 
-# Default to 1000:1000 to match the legacy `user: "1000:1000"` default
-# in our previously-shipped compose template; overridable via env so
-# users who run docker as a different uid can match their host without
-# editing the compose user: directive.
-PUID="${PUID:-1000}"
-PGID="${PGID:-1000}"
+infer_owner_ids() {
+    target="$1"
+    if [ -e "$target" ]; then
+        stat -c '%u:%g' "$target" 2>/dev/null || true
+    fi
+}
+
+# When PUID/PGID aren't explicitly set, prefer the ownership of the mounted
+# data path over the legacy 1000:1000 fallback. On Docker Desktop bind mounts
+# (macOS/Windows), host files often belong to a non-1000 uid/gid, and dropping
+# to 1000 can leave the SQLite database unreadable even after a best-effort
+# chown. We probe the existing DB file first, then the data dir, then logs.
+if [ -z "${PUID:-}" ] || [ -z "${PGID:-}" ]; then
+    inferred_ids="$(
+        infer_owner_ids /app/data/bambuddy.db ||
+        infer_owner_ids /app/data ||
+        infer_owner_ids /app/logs
+    )"
+    inferred_uid="${inferred_ids%%:*}"
+    inferred_gid="${inferred_ids##*:}"
+fi
+
+PUID="${PUID:-${inferred_uid:-1000}}"
+PGID="${PGID:-${inferred_gid:-1000}}"
 
 # If we're not root, we can't chown anything. Exec the original command
 # and trust that the user has set up host-side ownership themselves.
@@ -51,6 +69,15 @@ chown_if_needed() {
     fi
 }
 
+path_owned_by_runtime_user() {
+    target="$1"
+    if [ ! -e "$target" ]; then
+        return 0
+    fi
+    current="$(stat -c '%u:%g' "$target" 2>/dev/null || echo '')"
+    [ "$current" = "$PUID:$PGID" ]
+}
+
 chown_if_needed /app/data
 chown_if_needed /app/logs
 
@@ -61,6 +88,20 @@ chown_if_needed /app/logs
 if [ -d /app/data/virtual_printer ]; then
     chown_if_needed /app/data/virtual_printer
 fi
+
+# If the data directory itself already has the "right" ownership, nested SQLite
+# files can still be stale from an earlier runtime uid. That leaves bambuddy.db
+# (or its -wal / -shm siblings) unreadable even though /app/data looks fine.
+# Detect that case explicitly and repair the whole tree before dropping
+# privileges.
+if ! path_owned_by_runtime_user /app/data/bambuddy.db || \
+   ! path_owned_by_runtime_user /app/data/bambuddy.db-wal || \
+   ! path_owned_by_runtime_user /app/data/bambuddy.db-shm; then
+    echo "[entrypoint] fixing sqlite file ownership under /app/data for ${PUID}:${PGID}"
+    chown -R "${PUID}:${PGID}" /app/data || true
+fi
+
+echo "[entrypoint] starting as ${PUID}:${PGID}"
 
 # Drop privileges and run the application. python's file capabilities
 # (cap_net_bind_service=+ep, set in the Dockerfile) survive the uid
