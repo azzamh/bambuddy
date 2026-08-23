@@ -3,7 +3,9 @@
 import asyncio
 import json
 import logging
+import math
 import time
+from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -48,6 +50,28 @@ def _canonical_filament_type(ftype: str) -> str:
     """Return canonical type for equivalence matching."""
     upper = ftype.upper()
     return _FILAMENT_EQUIV_MAP.get(upper, upper)
+
+
+# Per-channel RGB tolerance for treating two colours as the same filament.
+# Tightened from 40: at 40 a typical library's greys chain together
+# (#545454<->#757575 = 33, #757575<->#808080 = 11, #000000<->#161616 = 22), so
+# "close enough" matches were consuming trays that a later slot matched exactly.
+# Raise this if RFID-reported tray colours drift far enough from the slicer's
+# profile colour that legitimate slots start coming back unmapped.
+SIMILAR_COLOR_THRESHOLD = 20
+
+# Candidate quality tiers for a (required filament, loaded tray) pair — lower is
+# stronger evidence. Used as the primary sort key when resolving the slot<->tray
+# assignment; colour distance breaks ties within a tier.
+_TIER_IDX_AND_EXACT = 0  # same sliced preset AND same colour
+_TIER_SOLE_IDX = 1  # the only tray carrying the sliced preset
+_TIER_EXACT = 2  # same colour
+_TIER_IDX_AND_SIMILAR = 3  # same sliced preset, near-identical colour
+_TIER_SIMILAR = 4  # near-identical colour
+# There is deliberately no "same type, any colour" tier. Assigning an arbitrary
+# same-type tray to a slot whose colour is nowhere on the printer produced
+# silently wrong-coloured prints — the slot is left unmapped instead so the
+# caller can surface it.
 
 
 class PrintScheduler:
@@ -933,40 +957,117 @@ class PrintScheduler:
             return ""
         return color.replace("#", "").lower()[:6]
 
-    def _colors_are_similar(self, color1: str | None, color2: str | None, threshold: int = 40) -> bool:
-        """Check if two colors are visually similar within a threshold."""
-        hex1 = self._normalize_color_for_compare(color1)
-        hex2 = self._normalize_color_for_compare(color2)
-        if not hex1 or not hex2 or len(hex1) < 6 or len(hex2) < 6:
-            return False
-
+    def _parse_rgb(self, color: str | None) -> tuple[int, int, int] | None:
+        """Split a colour into ``(r, g, b)``, or None when it isn't parseable."""
+        hex_color = self._normalize_color_for_compare(color)
+        if len(hex_color) < 6:
+            return None
         try:
-            r1 = int(hex1[0:2], 16)
-            g1 = int(hex1[2:4], 16)
-            b1 = int(hex1[4:6], 16)
-            r2 = int(hex2[0:2], 16)
-            g2 = int(hex2[2:4], 16)
-            b2 = int(hex2[4:6], 16)
-            return abs(r1 - r2) <= threshold and abs(g1 - g2) <= threshold and abs(b1 - b2) <= threshold
+            return (
+                int(hex_color[0:2], 16),
+                int(hex_color[2:4], 16),
+                int(hex_color[4:6], 16),
+            )
         except ValueError:
+            return None
+
+    def _colors_are_similar(self, color1: str | None, color2: str | None, threshold: int | None = None) -> bool:
+        """Check if two colors are visually similar within a per-channel threshold."""
+        rgb1 = self._parse_rgb(color1)
+        rgb2 = self._parse_rgb(color2)
+        if rgb1 is None or rgb2 is None:
             return False
+        limit = SIMILAR_COLOR_THRESHOLD if threshold is None else threshold
+        return all(abs(a - b) <= limit for a, b in zip(rgb1, rgb2, strict=True))
+
+    def _color_distance(self, color1: str | None, color2: str | None) -> float:
+        """Euclidean RGB distance, or ``inf`` when either colour is unparseable.
+
+        Only used to break ties between candidates in the same quality tier, so
+        an unparseable colour sorts last rather than being rejected outright.
+        """
+        rgb1 = self._parse_rgb(color1)
+        rgb2 = self._parse_rgb(color2)
+        if rgb1 is None or rgb2 is None:
+            return math.inf
+        return math.sqrt(sum((a - b) ** 2 for a, b in zip(rgb1, rgb2, strict=True)))
+
+    def _eligible_trays(self, req: dict, loaded: list[dict]) -> list[dict]:
+        """Trays that ``req`` is allowed to be routed to at all.
+
+        Nozzle-aware filtering: restrict to trays on the correct nozzle. Hard
+        filter — cross-nozzle assignment causes print failures ("position of
+        left hotend is abnormal"), so never fall back. ``nozzle_id`` is only
+        present for dual-nozzle files (H2D / X2D); single-nozzle printers like
+        the A1 series never set it.
+        """
+        req_nozzle_id = req.get("nozzle_id")
+        if req_nozzle_id is None:
+            return list(loaded)
+        return [f for f in loaded if f.get("extruder_id") == req_nozzle_id]
+
+    def _candidate_tier(self, req: dict, tray: dict, sole_idx: set[str]) -> int | None:
+        """Rank how strongly ``tray`` matches what ``req`` asks for.
+
+        Returns one of the ``_TIER_*`` constants, or None when the tray is not
+        an acceptable substitute — the caller must then leave the slot unmapped
+        rather than guessing.
+        """
+        if _canonical_filament_type((tray.get("type") or "").upper()) != _canonical_filament_type(
+            (req.get("type") or "").upper()
+        ):
+            return None
+
+        req_idx = req.get("tray_info_idx") or ""
+        same_idx = bool(req_idx) and tray.get("tray_info_idx") == req_idx
+        exact = self._normalize_color_for_compare(tray.get("color")) == self._normalize_color_for_compare(
+            req.get("color")
+        )
+
+        if same_idx and exact:
+            return _TIER_IDX_AND_EXACT
+        if same_idx and req_idx in sole_idx:
+            # Only one loaded tray carries the preset this slot was sliced with,
+            # so the preset identifies it even when the reported colour drifts
+            # (RFID tray colour vs the slicer profile's colour).
+            return _TIER_SOLE_IDX
+        if exact:
+            return _TIER_EXACT
+        if self._colors_are_similar(tray.get("color"), req.get("color")):
+            return _TIER_IDX_AND_SIMILAR if same_idx else _TIER_SIMILAR
+        return None
 
     def _match_filaments_to_slots(
         self, required: list[dict], loaded: list[dict], prefer_lowest: bool = False
     ) -> list[int] | None:
         """Match required filaments to loaded filaments and build AMS mapping.
 
-        Priority: unique tray_info_idx match > exact color match > similar color match > type-only match
+        Every (slot, tray) pair is scored first, then the assignment is resolved
+        globally best-first: the strongest evidence claims its tray before any
+        weaker candidate gets a turn. The previous implementation walked slots in
+        order and let each take its own best remaining tray, which meant an
+        approximate colour match on an early slot could consume the very tray a
+        later slot matched exactly — on a printer loaded with four spools of one
+        preset that reliably produced wrong-coloured multi-colour prints.
 
-        The tray_info_idx is a filament type identifier stored in the 3MF file when the user
-        slices (e.g., "GFA00" for generic PLA, "P4d64437" for custom presets). If the same
-        tray_info_idx appears in only ONE available tray, we use that tray. If multiple trays
-        have the same tray_info_idx (e.g., two spools of generic PLA), we fall back to color
-        matching among those trays.
+        This is best-first rather than a full minimum-cost assignment. The tiers
+        are strongly separated in practice (an exact colour match is close to
+        unique), so the extra machinery buys nothing measurable here; revisit if
+        that assumption stops holding.
+
+        A slot with no acceptable tray is left at -1 rather than being handed an
+        arbitrary same-type spool. Callers surface that instead of printing the
+        wrong colour — see the ``_TIER_*`` note above.
+
+        The tray_info_idx is a filament preset identifier stored in the 3MF when
+        the user slices (e.g. "GFA00" for Bambu PLA Basic, "P4d64437" for a
+        custom preset). When exactly one loaded tray carries the sliced preset it
+        identifies that tray on its own, even if the reported colour drifts.
 
         Args:
             required: List of required filaments with slot_id, type, color, tray_info_idx
             loaded: List of loaded filaments with type, color, tray_info_idx, global_tray_id
+            prefer_lowest: Prefer the lowest-remaining spool among equally good candidates
 
         Returns:
             AMS mapping array (position = slot_id - 1, value = global_tray_id or -1)
@@ -974,103 +1075,72 @@ class PrintScheduler:
         if not required:
             return None
 
-        # Track used trays to avoid duplicate assignment
-        used_tray_ids: set[int] = set()
-        comparisons = []
+        # Presets carried by exactly one loaded tray. Computed over all loaded
+        # trays rather than the not-yet-used ones so the result doesn't depend on
+        # the order slots happen to be resolved in.
+        idx_counts = Counter(f.get("tray_info_idx") for f in loaded if f.get("tray_info_idx"))
+        sole_idx = {idx for idx, count in idx_counts.items() if count == 1}
 
+        # Score every acceptable pairing, then sort so the best evidence wins.
+        # Tie-break order after (tier, colour distance): remaining filament when
+        # prefer_lowest is on, then slot_id and tray id to keep the result
+        # deterministic for identical input.
+        candidates: list[tuple[int, float, float, int, int]] = []
         for req in required:
-            req_type = (req.get("type") or "").upper()
-            req_color = req.get("color", "")
-            req_tray_info_idx = req.get("tray_info_idx", "")
-
-            # Find best match: unique tray_info_idx > exact color > similar color > type-only
-            idx_match = None
-            exact_match = None
-            similar_match = None
-            type_only_match = None
-
-            # Get available trays (not already used)
-            available = [f for f in loaded if f["global_tray_id"] not in used_tray_ids]
-
-            # Nozzle-aware filtering: restrict to trays on the correct nozzle.
-            # Hard filter — cross-nozzle assignment causes print failures
-            # ("position of left hotend is abnormal"), so never fall back.
-            req_nozzle_id = req.get("nozzle_id")
-            if req_nozzle_id is not None:
-                available = [f for f in available if f.get("extruder_id") == req_nozzle_id]
-
-            # Sort by remaining filament (ascending) so lowest-remain spool wins .find()
-            if prefer_lowest:
-                available.sort(key=lambda f: f.get("remain", -1) if f.get("remain", -1) >= 0 else 101)
-
-            # Check if tray_info_idx is unique among available trays
-            if req_tray_info_idx:
-                idx_matches = [f for f in available if f.get("tray_info_idx") == req_tray_info_idx]
-                if len(idx_matches) == 1:
-                    # Unique tray_info_idx - use it as definitive match
-                    idx_match = idx_matches[0]
-                    logger.debug(
-                        f"Matched filament slot {req.get('slot_id')} by unique tray_info_idx={req_tray_info_idx} "
-                        f"-> tray {idx_match['global_tray_id']}"
+            slot_id = req.get("slot_id", 0)
+            for tray in self._eligible_trays(req, loaded):
+                tier = self._candidate_tier(req, tray, sole_idx)
+                if tier is None:
+                    continue
+                remain = tray.get("remain", -1)
+                remain_key = (remain if remain >= 0 else 101) if prefer_lowest else 0
+                candidates.append(
+                    (
+                        tier,
+                        self._color_distance(tray.get("color"), req.get("color")),
+                        remain_key,
+                        slot_id,
+                        tray["global_tray_id"],
                     )
-                elif len(idx_matches) > 1:
-                    # Multiple trays with same tray_info_idx - use color matching among them
-                    logger.debug(
-                        f"Non-unique tray_info_idx={req_tray_info_idx} found in {len(idx_matches)} trays, "
-                        f"using color matching among trays: {[f['global_tray_id'] for f in idx_matches]}"
-                    )
-                    if prefer_lowest:
-                        idx_matches.sort(key=lambda f: f.get("remain", -1) if f.get("remain", -1) >= 0 else 101)
-                    # Use color matching within this subset
-                    for f in idx_matches:
-                        f_color = f.get("color", "")
-                        if self._normalize_color_for_compare(f_color) == self._normalize_color_for_compare(req_color):
-                            if not exact_match:
-                                exact_match = f
-                        elif self._colors_are_similar(f_color, req_color):
-                            if not similar_match:
-                                similar_match = f
-                        elif not type_only_match:
-                            type_only_match = f
+                )
 
-            # If no idx_match yet, do standard type/color matching on all available trays
-            if not idx_match and not exact_match and not similar_match and not type_only_match:
-                for f in available:
-                    f_type = (f.get("type") or "").upper()
-                    if _canonical_filament_type(f_type) != _canonical_filament_type(req_type):
-                        continue
+        candidates.sort()
 
-                    # Type matches - check color
-                    f_color = f.get("color", "")
-                    if self._normalize_color_for_compare(f_color) == self._normalize_color_for_compare(req_color):
-                        if not exact_match:
-                            exact_match = f
-                    elif self._colors_are_similar(f_color, req_color):
-                        if not similar_match:
-                            similar_match = f
-                    elif not type_only_match:
-                        type_only_match = f
+        assigned: dict[int, int] = {}
+        used_tray_ids: set[int] = set()
+        for tier, _distance, _remain, slot_id, tray_id in candidates:
+            if slot_id in assigned or tray_id in used_tray_ids:
+                continue
+            assigned[slot_id] = tray_id
+            used_tray_ids.add(tray_id)
+            logger.debug(
+                "Matched filament slot %s -> tray %s (tier %s)",
+                slot_id,
+                tray_id,
+                tier,
+            )
 
-            match = idx_match or exact_match or similar_match or type_only_match
-            if match:
-                used_tray_ids.add(match["global_tray_id"])
-                comparisons.append({"slot_id": req.get("slot_id", 0), "global_tray_id": match["global_tray_id"]})
-            else:
-                comparisons.append({"slot_id": req.get("slot_id", 0), "global_tray_id": -1})
+        unmapped = [req.get("slot_id", 0) for req in required if req.get("slot_id", 0) not in assigned]
+        if unmapped:
+            logger.warning(
+                "No acceptable tray for filament slot(s) %s — leaving unmapped. Required: %s",
+                unmapped,
+                [
+                    {"slot_id": r.get("slot_id"), "type": r.get("type"), "color": r.get("color")}
+                    for r in required
+                    if r.get("slot_id", 0) in unmapped
+                ],
+            )
 
-        # Build mapping array
-        if not comparisons:
-            return None
-
-        max_slot_id = max(c["slot_id"] for c in comparisons)
+        slot_ids = [req.get("slot_id", 0) for req in required]
+        max_slot_id = max(slot_ids) if slot_ids else 0
         if max_slot_id <= 0:
             return None
 
         mapping = [-1] * max_slot_id
-        for c in comparisons:
-            slot_id = c["slot_id"]
-            if slot_id and slot_id > 0:
-                mapping[slot_id - 1] = c["global_tray_id"]
+        for slot_id, tray_id in assigned.items():
+            if slot_id > 0:
+                mapping[slot_id - 1] = tray_id
 
         return mapping
 

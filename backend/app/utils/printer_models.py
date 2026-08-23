@@ -36,11 +36,13 @@ PRINTER_MODEL_ID_MAP = {
     "P2S": "P2S",
     # X2 series
     "N6": "X2D",
-    # A1 series
+    # A1 series. N1/N2S were swapped here; verified against real exports —
+    # an A1 3MF carries printer_model_id "N2S", an A1 mini carries "N1".
+    # This agrees with the codes used in virtual_printer/manager.py.
     "A11": "A1",
     "A12": "A1 Mini",
-    "N1": "A1",
-    "N2S": "A1 Mini",
+    "N1": "A1 Mini",
+    "N2S": "A1",
     "A04": "A1 Mini",
     # H2 series (Office/H series)
     "O1D": "H2D",

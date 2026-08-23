@@ -203,15 +203,52 @@ class TestMatchFilamentsToSlots:
         result = scheduler._match_filaments_to_slots(required, loaded)
         assert result == [0]
 
-    def test_match_type_only(self, scheduler):
-        """Should match by type when colors don't match."""
+    def test_type_match_with_wrong_color_is_left_unmapped(self, scheduler):
+        """A same-type tray in a different colour is not an acceptable substitute.
+
+        Handing the slot an arbitrary same-type spool printed the wrong colour
+        silently; the slot must come back as -1 so the caller can surface it.
+        """
         required = [{"slot_id": 1, "type": "PLA", "color": "#FF0000"}]
         loaded = [
             {"type": "PLA", "color": "#0000FF", "global_tray_id": 5},  # Type match, color way off
         ]
 
         result = scheduler._match_filaments_to_slots(required, loaded)
-        assert result == [5]
+        assert result == [-1]
+
+    def test_approximate_match_does_not_steal_an_exact_match(self, scheduler):
+        """Regression: an early "similar" hit used to consume a later slot's tray.
+
+        Slot 1 (#161616) would take the black tray as a similar match, leaving
+        slot 2 (#000000) — which matches it exactly — to grab an arbitrary
+        same-type tray. Ranking all pairs together makes the exact match win.
+        """
+        required = [
+            {"slot_id": 1, "type": "PLA", "color": "#161616"},
+            {"slot_id": 2, "type": "PLA", "color": "#000000"},
+        ]
+        loaded = [
+            {"type": "PLA", "color": "#000000", "global_tray_id": 0},
+            {"type": "PLA", "color": "#FFFFFF", "global_tray_id": 1},
+        ]
+
+        result = scheduler._match_filaments_to_slots(required, loaded)
+        assert result == [-1, 0]
+
+    def test_sole_tray_with_sliced_preset_wins_despite_color_drift(self, scheduler):
+        """One tray carrying the sliced preset identifies it even if colour drifts.
+
+        Covers RFID-reported tray colour differing from the slicer profile's.
+        """
+        required = [{"slot_id": 1, "type": "PLA", "color": "#161616", "tray_info_idx": "P4d64437"}]
+        loaded = [
+            {"type": "PLA", "color": "#FFFFFF", "global_tray_id": 0, "tray_info_idx": "GFA00"},
+            {"type": "PLA", "color": "#3A3A3A", "global_tray_id": 1, "tray_info_idx": "P4d64437"},
+        ]
+
+        result = scheduler._match_filaments_to_slots(required, loaded)
+        assert result == [1]
 
     def test_match_no_match_returns_minus_one(self, scheduler):
         """Unmatched filaments should have -1 in mapping."""
@@ -780,14 +817,30 @@ class TestNozzleAwareMapping:
             {"slot_id": 2, "type": "PLA", "color": "#00FF00", "nozzle_id": 1},  # Left nozzle
         ]
         loaded = [
-            {"type": "PLA", "color": "#00FF00", "global_tray_id": 0, "extruder_id": 0},  # AMS0 on right
-            {"type": "PLA", "color": "#FF0000", "global_tray_id": 4, "extruder_id": 1},  # AMS1 on left
+            # Each nozzle carries the colour its slot needs, plus a decoy of the
+            # other slot's colour so a cross-nozzle match would be visible.
+            {"type": "PLA", "color": "#FF0000", "global_tray_id": 0, "extruder_id": 0},  # right, red
+            {"type": "PLA", "color": "#00FF00", "global_tray_id": 1, "extruder_id": 0},  # right, green
+            {"type": "PLA", "color": "#00FF00", "global_tray_id": 4, "extruder_id": 1},  # left, green
+            {"type": "PLA", "color": "#FF0000", "global_tray_id": 5, "extruder_id": 1},  # left, red
         ]
-        # Without nozzle filtering, slot 1 (red, right) would match tray 4 (red, left) by color.
-        # With nozzle filtering, slot 1 (right nozzle) can only use tray 0 (right extruder),
-        # and slot 2 (left nozzle) can only use tray 4 (left extruder).
         result = scheduler._match_filaments_to_slots(required, loaded)
         assert result == [0, 4]
+
+    def test_dual_nozzle_color_only_on_wrong_nozzle_is_unmapped(self, scheduler):
+        """The colour existing on the other nozzle must not produce a match."""
+        required = [
+            {"slot_id": 1, "type": "PLA", "color": "#FF0000", "nozzle_id": 0},  # Right nozzle
+            {"slot_id": 2, "type": "PLA", "color": "#00FF00", "nozzle_id": 1},  # Left nozzle
+        ]
+        loaded = [
+            {"type": "PLA", "color": "#00FF00", "global_tray_id": 0, "extruder_id": 0},  # right, green
+            {"type": "PLA", "color": "#FF0000", "global_tray_id": 4, "extruder_id": 1},  # left, red
+        ]
+        # Each slot's colour sits on the nozzle it can't reach, and a same-type
+        # tray in the wrong colour is no longer accepted as a substitute.
+        result = scheduler._match_filaments_to_slots(required, loaded)
+        assert result == [-1, -1]
 
     def test_nozzle_hard_filter_no_fallback(self, scheduler):
         """Hard filter: no fallback to wrong nozzle when target nozzle has no trays."""

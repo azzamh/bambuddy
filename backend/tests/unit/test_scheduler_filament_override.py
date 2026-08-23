@@ -114,9 +114,10 @@ class TestFilamentOverrideInMatching:
             {"type": "PLA", "color": "#FF0000", "global_tray_id": 0},
         ]
 
-        # Without override: type-only match (colors differ)
+        # Without override: unmapped, since a same-type tray in a different
+        # colour is not an acceptable substitute
         result_without = scheduler._match_filaments_to_slots(filament_reqs, loaded)
-        assert result_without == [0]  # Matches by type only
+        assert result_without == [-1]
 
         # Now apply override changing color to match loaded
         overrides = [{"slot_id": 1, "type": "PLA", "color": "#FF0000"}]

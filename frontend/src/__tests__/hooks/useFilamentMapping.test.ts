@@ -290,7 +290,9 @@ describe('computeAmsMapping', () => {
     expect(result).toEqual([0]);  // Falls back to color match
   });
 
-  it('matches by type only when color differs', () => {
+  it('leaves the slot unmapped when only the type matches', () => {
+    // Handing a slot an arbitrary same-type tray printed the wrong colour
+    // silently — the slot must come back as -1 so the caller can surface it.
     const reqs = {
       filaments: [
         { slot_id: 1, type: 'PLA', color: '#FF0000', used_grams: 10 },
@@ -307,7 +309,32 @@ describe('computeAmsMapping', () => {
 
     const result = computeAmsMapping(reqs, status);
 
-    expect(result).toEqual([0]);  // Type-only match
+    expect(result).toEqual([-1]);
+  });
+
+  it('does not let an approximate match steal a tray a later slot matches exactly', () => {
+    // Regression: slot 1 (#161616) used to consume the black tray as a "similar"
+    // match, leaving slot 2 (#000000) to grab an arbitrary same-type tray. Now
+    // the exact match wins the tray and slot 1 is reported unmapped instead.
+    const reqs = {
+      filaments: [
+        { slot_id: 1, type: 'PLA', color: '#161616', used_grams: 10 },
+        { slot_id: 2, type: 'PLA', color: '#000000', used_grams: 10 },
+      ],
+    };
+    const status = createPrinterStatus([
+      {
+        id: 0,
+        tray: [
+          { id: 0, tray_type: 'PLA', tray_color: '000000' },
+          { id: 1, tray_type: 'PLA', tray_color: 'FFFFFF' },
+        ],
+      },
+    ]);
+
+    const result = computeAmsMapping(reqs, status);
+
+    expect(result).toEqual([-1, 0]);
   });
 
   it('returns -1 for unmatched slots', () => {

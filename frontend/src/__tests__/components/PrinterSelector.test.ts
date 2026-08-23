@@ -154,13 +154,12 @@ describe('autoMatchFilament', () => {
     expect(result!.globalTrayId).toBe(0); // Exact match: PLA Black
   });
 
-  it('falls back to type-only match on correct nozzle', () => {
-    // Require PETG Green on left nozzle — no exact color match, but PETG White exists
+  it('does NOT fall back to a same-type tray in a different color', () => {
+    // Require PETG Green on left nozzle. PETG White exists there, but claiming it
+    // made the printer look capable of a job it would print in the wrong color.
     const req = makeReq({ type: 'PETG', color: '#00FF00', nozzle_id: 1 });
     const result = autoMatchFilament(req, H2D_FILAMENTS, new Set());
-    expect(result).toBeDefined();
-    expect(result!.globalTrayId).toBe(1); // PETG White on left nozzle
-    expect(result!.extruderId).toBe(1);
+    expect(result).toBeUndefined();
   });
 
   it('returns undefined when no filament matches on required nozzle', () => {
@@ -170,13 +169,23 @@ describe('autoMatchFilament', () => {
     expect(result).toBeUndefined();
   });
 
-  it('skips already-used tray IDs', () => {
+  it('skips already-used tray IDs in favor of another acceptable tray', () => {
+    const filaments: LoadedFilament[] = [
+      makeFilament({ globalTrayId: 4, type: 'PLA', color: '#FFFFFF', extruderId: 0 }),
+      makeFilament({ globalTrayId: 5, type: 'PLA', color: '#FFFFFF', extruderId: 0 }),
+    ];
     const req = makeReq({ type: 'PLA', color: '#FFFFFF', nozzle_id: 0 });
-    const used = new Set([4]); // AMS2-T1 already used
-    const result = autoMatchFilament(req, H2D_FILAMENTS, used);
-    // Should fall back to PLA Red (tray 5) as type-only match
+    const used = new Set([4]);
+    const result = autoMatchFilament(req, filaments, used);
     expect(result).toBeDefined();
     expect(result!.globalTrayId).toBe(5);
+  });
+
+  it('returns undefined when the only acceptable tray is already used', () => {
+    const req = makeReq({ type: 'PLA', color: '#FFFFFF', nozzle_id: 0 });
+    const used = new Set([4]); // AMS2-T1, the only white PLA on the right nozzle
+    const result = autoMatchFilament(req, H2D_FILAMENTS, used);
+    expect(result).toBeUndefined();
   });
 
   it('matches PA-CF requirement to PA12-CF filament — #688', () => {

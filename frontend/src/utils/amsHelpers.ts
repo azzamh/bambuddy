@@ -60,33 +60,62 @@ export function filamentTypesCompatible(a: string | undefined, b: string | undef
 }
 
 /**
+ * Per-channel RGB tolerance for treating two colors as the same filament.
+ * Tightened from 40: at 40 a typical library's greys chain together
+ * (#545454<->#757575 = 33, #757575<->#808080 = 11, #000000<->#161616 = 22), so
+ * "close enough" matches were consuming trays that a later slot matched exactly.
+ * Raise this if RFID-reported tray colors drift far enough from the slicer's
+ * profile color that legitimate slots start coming back unmapped.
+ *
+ * Keep in sync with SIMILAR_COLOR_THRESHOLD in backend/app/services/print_scheduler.py.
+ */
+export const SIMILAR_COLOR_THRESHOLD = 20;
+
+/**
+ * Parse a hex color into RGB components, or null when it isn't parseable.
+ */
+export function parseRgb(color: string | undefined): [number, number, number] | null {
+  const hex = normalizeColorForCompare(color);
+  if (hex.length < 6) return null;
+  const r = parseInt(hex.substring(0, 2), 16);
+  const g = parseInt(hex.substring(2, 4), 16);
+  const b = parseInt(hex.substring(4, 6), 16);
+  if (Number.isNaN(r) || Number.isNaN(g) || Number.isNaN(b)) return null;
+  return [r, g, b];
+}
+
+/**
  * Check if two colors are visually similar within a threshold.
  * Uses RGB component comparison with configurable tolerance.
  * @param color1 - First hex color
  * @param color2 - Second hex color
- * @param threshold - Maximum difference per RGB component (default: 40)
+ * @param threshold - Maximum difference per RGB component
  */
 export function colorsAreSimilar(
   color1: string | undefined,
   color2: string | undefined,
-  threshold = 40
+  threshold = SIMILAR_COLOR_THRESHOLD
 ): boolean {
-  const hex1 = normalizeColorForCompare(color1);
-  const hex2 = normalizeColorForCompare(color2);
-  if (!hex1 || !hex2 || hex1.length < 6 || hex2.length < 6) return false;
+  const rgb1 = parseRgb(color1);
+  const rgb2 = parseRgb(color2);
+  if (!rgb1 || !rgb2) return false;
 
-  const r1 = parseInt(hex1.substring(0, 2), 16);
-  const g1 = parseInt(hex1.substring(2, 4), 16);
-  const b1 = parseInt(hex1.substring(4, 6), 16);
-  const r2 = parseInt(hex2.substring(0, 2), 16);
-  const g2 = parseInt(hex2.substring(2, 4), 16);
-  const b2 = parseInt(hex2.substring(4, 6), 16);
+  return rgb1.every((c, i) => Math.abs(c - rgb2[i]) <= threshold);
+}
 
-  return (
-    Math.abs(r1 - r2) <= threshold &&
-    Math.abs(g1 - g2) <= threshold &&
-    Math.abs(b1 - b2) <= threshold
-  );
+/**
+ * Euclidean RGB distance, or Infinity when either color is unparseable.
+ * Only used to break ties between candidates of equal quality, so an
+ * unparseable color sorts last rather than being rejected outright.
+ */
+export function colorDistance(
+  color1: string | undefined,
+  color2: string | undefined
+): number {
+  const rgb1 = parseRgb(color1);
+  const rgb2 = parseRgb(color2);
+  if (!rgb1 || !rgb2) return Infinity;
+  return Math.sqrt(rgb1.reduce((sum, c, i) => sum + (c - rgb2[i]) ** 2, 0));
 }
 
 /**
@@ -231,13 +260,10 @@ export function autoMatchFilament(
           filamentTypesCompatible(f.type, req.type) &&
           colorsAreSimilar(f.color, req.color)
       );
-  const typeOnlyMatch =
-    exactMatch || similarMatch
-      ? undefined
-      : nozzleFilaments.find(
-          (f) => !usedTrayIds.has(f.globalTrayId) && filamentTypesCompatible(f.type, req.type)
-        );
-  return exactMatch ?? similarMatch ?? typeOnlyMatch;
+  // No "same type, any color" fallback: handing a slot an arbitrary same-type
+  // spool made printers look capable of a job they'd print in the wrong color.
+  // An unmatched slot is reported as unmatched instead.
+  return exactMatch ?? similarMatch;
 }
 
 /**

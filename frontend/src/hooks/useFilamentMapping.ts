@@ -4,6 +4,8 @@ import {
   normalizeColor,
   normalizeColorForCompare,
   colorsAreSimilar,
+  colorDistance,
+  filamentTypesCompatible,
   formatSlotLabel,
   getGlobalTrayId,
 } from '../utils/amsHelpers';
@@ -71,19 +73,73 @@ export function buildLoadedFilaments(printerStatus: PrinterStatus | undefined): 
 }
 
 /**
+ * Candidate quality tiers for a (required filament, loaded tray) pair — lower is
+ * stronger evidence. Primary sort key when resolving the slot<->tray assignment;
+ * color distance breaks ties within a tier.
+ *
+ * There is deliberately no "same type, any color" tier. Assigning an arbitrary
+ * same-type tray to a slot whose color is nowhere on the printer produced
+ * silently wrong-colored prints — the slot is left unmapped instead.
+ *
+ * Keep in sync with the _TIER_* constants in backend/app/services/print_scheduler.py.
+ */
+const TIER_IDX_AND_EXACT = 0; // same sliced preset AND same color
+const TIER_SOLE_IDX = 1; // the only tray carrying the sliced preset
+const TIER_EXACT = 2; // same color
+const TIER_IDX_AND_SIMILAR = 3; // same sliced preset, near-identical color
+const TIER_SIMILAR = 4; // near-identical color
+
+/**
+ * Rank how strongly `tray` matches what `req` asks for, or null when the tray is
+ * not an acceptable substitute at all.
+ */
+function candidateTier(
+  req: FilamentRequirement,
+  tray: LoadedFilament,
+  soleIdx: Set<string>
+): number | null {
+  if (!filamentTypesCompatible(tray.type, req.type)) return null;
+
+  const reqIdx = req.tray_info_idx || '';
+  const sameIdx = reqIdx !== '' && tray.trayInfoIdx === reqIdx;
+  const exact = normalizeColorForCompare(tray.color) === normalizeColorForCompare(req.color);
+
+  if (sameIdx && exact) return TIER_IDX_AND_EXACT;
+  // Only one loaded tray carries the preset this slot was sliced with, so the
+  // preset identifies it even when the reported color drifts (RFID tray color
+  // vs the slicer profile's color).
+  if (sameIdx && soleIdx.has(reqIdx)) return TIER_SOLE_IDX;
+  if (exact) return TIER_EXACT;
+  if (colorsAreSimilar(tray.color, req.color)) {
+    return sameIdx ? TIER_IDX_AND_SIMILAR : TIER_SIMILAR;
+  }
+  return null;
+}
+
+/**
  * Compute AMS mapping for a printer given filament requirements and printer status.
  * This is a non-hook version that can be called imperatively (e.g., in a loop for multiple printers).
  *
- * Priority: unique tray_info_idx match > exact color match > similar color match > type-only match
+ * Every (slot, tray) pair is scored first, then the assignment is resolved
+ * globally best-first: the strongest evidence claims its tray before any weaker
+ * candidate gets a turn. Walking slots in order and letting each take its own
+ * best remaining tray meant an approximate color match on an early slot could
+ * consume the very tray a later slot matched exactly — on a printer loaded with
+ * four spools of one preset that reliably produced wrong-colored multi-color prints.
  *
- * The tray_info_idx is a filament type identifier stored in the 3MF file when the user
- * slices (e.g., "GFA00" for generic PLA, "P4d64437" for custom presets). If the same
- * tray_info_idx appears in only ONE available tray, we use that tray. If multiple trays
- * have the same tray_info_idx (e.g., two spools of generic PLA), we fall back to color
- * matching among those trays.
+ * A slot with no acceptable tray stays at -1 rather than being handed an
+ * arbitrary same-type spool, so the UI can show it as unmatched.
+ *
+ * The tray_info_idx is a filament preset identifier stored in the 3MF when the
+ * user slices (e.g. "GFA00" for Bambu PLA Basic, "P4d64437" for a custom preset).
+ * When exactly one loaded tray carries the sliced preset it identifies that tray
+ * on its own, even if the reported color drifts.
+ *
+ * Mirrors _match_filaments_to_slots in backend/app/services/print_scheduler.py.
  *
  * @param filamentReqs - Required filaments from the 3MF file
  * @param printerStatus - Current printer status with AMS information
+ * @param preferLowest - Prefer the lowest-remaining spool among equally good candidates
  * @returns AMS mapping array or undefined if no mapping needed
  */
 export function computeAmsMapping(
@@ -100,118 +156,81 @@ export function computeAmsMapping(
   // doesn't apply when it's installed (#1162).
   const ftsActive = printerStatus?.fila_switch?.installed === true;
 
-  // Track which trays have been assigned to avoid duplicates
-  const usedTrayIds = new Set<number>();
+  // Presets carried by exactly one loaded tray. Computed over all loaded trays
+  // rather than the not-yet-used ones so the result doesn't depend on the order
+  // slots happen to be resolved in.
+  const idxCounts = new Map<string, number>();
+  loadedFilaments.forEach((f) => {
+    if (f.trayInfoIdx) idxCounts.set(f.trayInfoIdx, (idxCounts.get(f.trayInfoIdx) ?? 0) + 1);
+  });
+  const soleIdx = new Set(
+    [...idxCounts.entries()].filter(([, count]) => count === 1).map(([idx]) => idx)
+  );
 
-  const comparisons = filamentReqs.filaments.map((req) => {
-    const reqTrayInfoIdx = req.tray_info_idx || '';
+  // Score every acceptable pairing, then sort so the best evidence wins.
+  // Tie-break order after (tier, color distance): remaining filament when
+  // preferLowest is on, then slot_id and tray id to keep the result
+  // deterministic for identical input.
+  interface Candidate {
+    tier: number;
+    distance: number;
+    remain: number;
+    slotId: number;
+    trayId: number;
+  }
+  const candidates: Candidate[] = [];
 
-    // Get available trays (not already used)
-    let available = loadedFilaments.filter((f) => !usedTrayIds.has(f.globalTrayId));
+  filamentReqs.filaments.forEach((req) => {
+    const slotId = req.slot_id || 0;
 
-    // Nozzle-aware filtering: restrict to trays on the correct nozzle.
-    // This is a hard filter — cross-nozzle assignment causes print failures
-    // ("position of left hotend is abnormal"), so we never fall back to wrong-nozzle trays.
+    // Nozzle-aware filtering: restrict to trays on the correct nozzle. This is a
+    // hard filter — cross-nozzle assignment causes print failures ("position of
+    // left hotend is abnormal"), so we never fall back to wrong-nozzle trays.
     // Skip when an FTS is installed: it can route any slot to either extruder.
-    if (req.nozzle_id != null && !ftsActive) {
-      available = available.filter((f) => f.extruderId === req.nozzle_id);
-    }
+    const eligible =
+      req.nozzle_id != null && !ftsActive
+        ? loadedFilaments.filter((f) => f.extruderId === req.nozzle_id)
+        : loadedFilaments;
 
-    // Sort by remaining filament (ascending) so .find() picks the lowest-remain spool first
-    if (preferLowest) {
-      available = [...available].sort((a, b) => {
-        const ra = a.remain >= 0 ? a.remain : 101;
-        const rb = b.remain >= 0 ? b.remain : 101;
-        return ra - rb;
+    eligible.forEach((tray) => {
+      const tier = candidateTier(req, tray, soleIdx);
+      if (tier === null) return;
+      const remain = tray.remain >= 0 ? tray.remain : 101;
+      candidates.push({
+        tier,
+        distance: colorDistance(tray.color, req.color),
+        remain: preferLowest ? remain : 0,
+        slotId,
+        trayId: tray.globalTrayId,
       });
-    }
+    });
+  });
 
-    let idxMatch: LoadedFilament | undefined;
-    let exactMatch: LoadedFilament | undefined;
-    let similarMatch: LoadedFilament | undefined;
-    let typeOnlyMatch: LoadedFilament | undefined;
+  candidates.sort(
+    (a, b) =>
+      a.tier - b.tier ||
+      a.distance - b.distance ||
+      a.remain - b.remain ||
+      a.slotId - b.slotId ||
+      a.trayId - b.trayId
+  );
 
-    // Check if tray_info_idx is unique among available trays
-    if (reqTrayInfoIdx) {
-      const idxMatches = available.filter((f) => f.trayInfoIdx === reqTrayInfoIdx);
-      if (idxMatches.length === 1) {
-        // Unique tray_info_idx - use it as definitive match
-        idxMatch = idxMatches[0];
-      } else if (idxMatches.length > 1) {
-        // Multiple trays with same tray_info_idx - use color matching among them
-        if (preferLowest) {
-          idxMatches.sort((a, b) => {
-            const ra = a.remain >= 0 ? a.remain : 101;
-            const rb = b.remain >= 0 ? b.remain : 101;
-            return ra - rb;
-          });
-        }
-        exactMatch = idxMatches.find(
-          (f) =>
-            f.type?.toUpperCase() === req.type?.toUpperCase() &&
-            normalizeColorForCompare(f.color) === normalizeColorForCompare(req.color)
-        );
-        if (!exactMatch) {
-          similarMatch = idxMatches.find(
-            (f) =>
-              f.type?.toUpperCase() === req.type?.toUpperCase() &&
-              colorsAreSimilar(f.color, req.color)
-          );
-        }
-        if (!exactMatch && !similarMatch) {
-          typeOnlyMatch = idxMatches.find(
-            (f) => f.type?.toUpperCase() === req.type?.toUpperCase()
-          );
-        }
-      }
-    }
-
-    // If no idx match, do standard type/color matching on all available trays
-    if (!idxMatch && !exactMatch && !similarMatch && !typeOnlyMatch) {
-      exactMatch = available.find(
-        (f) =>
-          f.type?.toUpperCase() === req.type?.toUpperCase() &&
-          normalizeColorForCompare(f.color) === normalizeColorForCompare(req.color)
-      );
-      if (!exactMatch) {
-        similarMatch = available.find(
-          (f) =>
-            f.type?.toUpperCase() === req.type?.toUpperCase() &&
-            colorsAreSimilar(f.color, req.color)
-        );
-      }
-      if (!exactMatch && !similarMatch) {
-        typeOnlyMatch = available.find(
-          (f) => f.type?.toUpperCase() === req.type?.toUpperCase()
-        );
-      }
-    }
-
-    const loaded = idxMatch || exactMatch || similarMatch || typeOnlyMatch || undefined;
-
-    // Mark this tray as used so it won't be assigned to another slot
-    if (loaded) {
-      usedTrayIds.add(loaded.globalTrayId);
-    }
-
-    return {
-      slot_id: req.slot_id,
-      globalTrayId: loaded?.globalTrayId ?? -1,
-    };
+  const assigned = new Map<number, number>();
+  const usedTrayIds = new Set<number>();
+  candidates.forEach(({ slotId, trayId }) => {
+    if (assigned.has(slotId) || usedTrayIds.has(trayId)) return;
+    assigned.set(slotId, trayId);
+    usedTrayIds.add(trayId);
   });
 
   // Find the max slot_id to determine array size
-  const maxSlotId = Math.max(...comparisons.map((f) => f.slot_id || 0));
+  const maxSlotId = Math.max(...filamentReqs.filaments.map((f) => f.slot_id || 0));
   if (maxSlotId <= 0) return undefined;
 
-  // Create array with -1 for all positions
+  // Create array with -1 for all positions, then fill in the resolved trays
   const mapping = new Array(maxSlotId).fill(-1);
-
-  // Fill in tray IDs at correct positions (slot_id - 1)
-  comparisons.forEach((f) => {
-    if (f.slot_id && f.slot_id > 0) {
-      mapping[f.slot_id - 1] = f.globalTrayId;
-    }
+  assigned.forEach((trayId, slotId) => {
+    if (slotId > 0) mapping[slotId - 1] = trayId;
   });
 
   return mapping;
@@ -323,11 +342,90 @@ export function useFilamentMapping(
   const filamentComparison = useMemo(() => {
     if (!filamentReqs?.filaments || filamentReqs.filaments.length === 0) return [];
 
-    // Track which trays have been assigned to avoid duplicates
-    // First, mark all manually assigned trays as used
+    const reqs = filamentReqs.filaments;
+
+    // Manually assigned trays are off the table for auto-matching.
     const usedTrayIds = new Set<number>(Object.values(manualMappings));
 
-    return filamentReqs.filaments.map((req) => {
+    const isManual = (req: FilamentRequirement) => {
+      const slotId = req.slot_id || 0;
+      return (
+        slotId > 0 &&
+        manualMappings[slotId] !== undefined &&
+        loadedFilaments.some((f) => f.globalTrayId === manualMappings[slotId])
+      );
+    };
+
+    // Trays this slot is allowed to be routed to at all. Nozzle-aware filtering
+    // is a hard filter — cross-nozzle assignment causes print failures. Skip it
+    // when an FTS is installed: it can route any slot to either extruder.
+    const nozzleEligibleFor = (req: FilamentRequirement) =>
+      loadedFilaments.filter(
+        (f) => req.nozzle_id == null || ftsActive || f.extruderId === req.nozzle_id
+      );
+
+    // Of those, the ones not already claimed. Reads `usedTrayIds` live, so call
+    // it only while building candidates — afterwards the set covers every
+    // assignment and the result no longer means "available to this slot".
+    const availableFor = (req: FilamentRequirement) =>
+      nozzleEligibleFor(req).filter((f) => !usedTrayIds.has(f.globalTrayId));
+
+    // Presets carried by exactly one loaded tray — see computeAmsMapping.
+    const idxCounts = new Map<string, number>();
+    loadedFilaments.forEach((f) => {
+      if (f.trayInfoIdx) idxCounts.set(f.trayInfoIdx, (idxCounts.get(f.trayInfoIdx) ?? 0) + 1);
+    });
+    const soleIdx = new Set(
+      [...idxCounts.entries()].filter(([, count]) => count === 1).map(([idx]) => idx)
+    );
+
+    // Resolve the auto-matched slots globally best-first, same as computeAmsMapping:
+    // score every acceptable (slot, tray) pairing, then let the strongest evidence
+    // claim its tray before any weaker candidate gets a turn. Resolving slot by
+    // slot let an approximate colour match on an early slot consume the tray a
+    // later slot matched exactly.
+    const candidates: {
+      tier: number;
+      distance: number;
+      remain: number;
+      slotId: number;
+      trayId: number;
+    }[] = [];
+
+    reqs.forEach((req) => {
+      if (isManual(req)) return;
+      const slotId = req.slot_id || 0;
+      availableFor(req).forEach((tray) => {
+        const tier = candidateTier(req, tray, soleIdx);
+        if (tier === null) return;
+        const remain = tray.remain >= 0 ? tray.remain : 101;
+        candidates.push({
+          tier,
+          distance: colorDistance(tray.color, req.color),
+          remain: preferLowest ? remain : 0,
+          slotId,
+          trayId: tray.globalTrayId,
+        });
+      });
+    });
+
+    candidates.sort(
+      (a, b) =>
+        a.tier - b.tier ||
+        a.distance - b.distance ||
+        a.remain - b.remain ||
+        a.slotId - b.slotId ||
+        a.trayId - b.trayId
+    );
+
+    const autoAssigned = new Map<number, number>();
+    candidates.forEach(({ slotId, trayId }) => {
+      if (autoAssigned.has(slotId) || usedTrayIds.has(trayId)) return;
+      autoAssigned.set(slotId, trayId);
+      usedTrayIds.add(trayId);
+    });
+
+    return reqs.map((req) => {
       const slotId = req.slot_id || 0;
 
       // Check if there's a manual override for this slot
@@ -362,108 +460,20 @@ export function useFilamentMapping(
         }
       }
 
-      // Auto-match: Find a loaded filament
-      // Priority: unique tray_info_idx match > exact color match > similar color match > type-only match
-      // IMPORTANT: Exclude trays that are already assigned (manually or auto)
-      const reqTrayInfoIdx = req.tray_info_idx || '';
+      const autoTrayId = autoAssigned.get(slotId);
+      const loaded =
+        autoTrayId === undefined
+          ? undefined
+          : loadedFilaments.find((f) => f.globalTrayId === autoTrayId);
 
-      // Get available trays (not already used)
-      let available = loadedFilaments.filter((f) => !usedTrayIds.has(f.globalTrayId));
-
-      // Nozzle-aware filtering: restrict to trays on the correct nozzle.
-      // This is a hard filter — cross-nozzle assignment causes print failures.
-      // Skip when an FTS is installed: it can route any slot to either extruder.
-      if (req.nozzle_id != null && !ftsActive) {
-        available = available.filter((f) => f.extruderId === req.nozzle_id);
-      }
-
-      // Sort by remaining filament (ascending) so .find() picks the lowest-remain spool first
-      if (preferLowest) {
-        available = [...available].sort((a, b) => {
-          const ra = a.remain >= 0 ? a.remain : 101;
-          const rb = b.remain >= 0 ? b.remain : 101;
-          return ra - rb;
-        });
-      }
-
-      let idxMatch: LoadedFilament | undefined;
-      let exactMatch: LoadedFilament | undefined;
-      let similarMatch: LoadedFilament | undefined;
-      let typeOnlyMatch: LoadedFilament | undefined;
-
-      // Check if tray_info_idx is unique among available trays
-      if (reqTrayInfoIdx) {
-        const idxMatches = available.filter((f) => f.trayInfoIdx === reqTrayInfoIdx);
-        if (idxMatches.length === 1) {
-          // Unique tray_info_idx - use it as definitive match
-          idxMatch = idxMatches[0];
-        } else if (idxMatches.length > 1) {
-          // Multiple trays with same tray_info_idx - use color matching among them
-          if (preferLowest) {
-            idxMatches.sort((a, b) => {
-              const ra = a.remain >= 0 ? a.remain : 101;
-              const rb = b.remain >= 0 ? b.remain : 101;
-              return ra - rb;
-            });
-          }
-          exactMatch = idxMatches.find(
-            (f) =>
-              f.type?.toUpperCase() === req.type?.toUpperCase() &&
-              normalizeColorForCompare(f.color) === normalizeColorForCompare(req.color)
-          );
-          if (!exactMatch) {
-            similarMatch = idxMatches.find(
-              (f) =>
-                f.type?.toUpperCase() === req.type?.toUpperCase() &&
-                colorsAreSimilar(f.color, req.color)
-            );
-          }
-          if (!exactMatch && !similarMatch) {
-            typeOnlyMatch = idxMatches.find(
-              (f) => f.type?.toUpperCase() === req.type?.toUpperCase()
-            );
-          }
-        }
-      }
-
-      // If no idx match, do standard type/color matching on all available trays
-      if (!idxMatch && !exactMatch && !similarMatch && !typeOnlyMatch) {
-        exactMatch = available.find(
-          (f) =>
-            f.type?.toUpperCase() === req.type?.toUpperCase() &&
-            normalizeColorForCompare(f.color) === normalizeColorForCompare(req.color)
-        );
-        if (!exactMatch) {
-          similarMatch = available.find(
-            (f) =>
-              f.type?.toUpperCase() === req.type?.toUpperCase() &&
-              colorsAreSimilar(f.color, req.color)
-          );
-        }
-        if (!exactMatch && !similarMatch) {
-          typeOnlyMatch = available.find(
-            (f) => f.type?.toUpperCase() === req.type?.toUpperCase()
-          );
-        }
-      }
-
-      const loaded = idxMatch || exactMatch || similarMatch || typeOnlyMatch || undefined;
-
-      // Mark this tray as used so it won't be assigned to another slot
-      if (loaded) {
-        usedTrayIds.add(loaded.globalTrayId);
-      }
-
-      const hasFilament = !!loaded;
-      const typeMatch = hasFilament;
-      // idxMatch is always considered a color match (same spool = same color)
-      const colorMatch = !!idxMatch || !!exactMatch || !!similarMatch;
-
-      // Status: match (tray_info_idx, type+color, or similar color), type_only (type ok, color very different), mismatch (type not found)
+      // An unmatched slot is reported, never filled with an arbitrary same-type
+      // spool — that silently printed the wrong colour. 'type_only' means "the
+      // right material is loaded but nothing close enough in colour", which the
+      // UI shows as an empty, highlighted dropdown for the user to resolve.
       let status: FilamentStatus;
-      if (idxMatch || exactMatch || similarMatch) {
+      if (loaded) {
         status = 'match';
-      } else if (typeOnlyMatch) {
+      } else if (nozzleEligibleFor(req).some((f) => filamentTypesCompatible(f.type, req.type))) {
         status = 'type_only';
       } else {
         status = 'mismatch';
@@ -472,9 +482,9 @@ export function useFilamentMapping(
       return {
         ...req,
         loaded,
-        hasFilament,
-        typeMatch,
-        colorMatch,
+        hasFilament: !!loaded,
+        typeMatch: !!loaded,
+        colorMatch: !!loaded,
         status,
         isManual: false,
       };
