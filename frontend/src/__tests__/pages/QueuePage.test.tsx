@@ -2,7 +2,7 @@
  * Tests for the QueuePage component.
  */
 
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { render } from '../utils';
@@ -262,6 +262,31 @@ describe('QueuePage', () => {
   });
 
   describe('filtering', () => {
+    // The printer cards deep-link here as /queue?printer=<id>; the helper
+    // renders inside a BrowserRouter, so the URL is set on window first.
+    afterEach(() => {
+      window.history.pushState({}, '', '/');
+    });
+
+    it('preselects the printer from the ?printer= deep link', async () => {
+      window.history.pushState({}, '', '/queue?printer=1');
+      render(<QueuePage />);
+
+      await waitFor(() => {
+        expect(screen.getByDisplayValue('Test Printer')).toBeInTheDocument();
+      });
+      expect(screen.queryByDisplayValue('All Printers')).not.toBeInTheDocument();
+    });
+
+    it('preselects unassigned from the ?printer=unassigned deep link', async () => {
+      window.history.pushState({}, '', '/queue?printer=unassigned');
+      render(<QueuePage />);
+
+      await waitFor(() => {
+        expect(screen.getByDisplayValue('Unassigned')).toBeInTheDocument();
+      });
+    });
+
     it('has printer filter options', async () => {
       const user = userEvent.setup();
       render(<QueuePage />);

@@ -2676,7 +2676,7 @@ function PrinterCard({
               {/* Queue Count Badge */}
               {queueCount > 0 && (
                 <button
-                  onClick={() => navigate('/queue')}
+                  onClick={() => navigate(`/queue?printer=${printer.id}`)}
                   className="flex items-center gap-1 px-2 py-1 text-xs text-indigo-400 transition-opacity rounded-full bg-indigo-500/20 hover:opacity-80"
                   title={t('printers.queue.inQueue', { count: queueCount })}
                 >

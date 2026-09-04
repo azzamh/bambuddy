@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useQueries, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import {
   DndContext,
   closestCenter,
@@ -703,12 +703,50 @@ function SortableQueueItem({
   );
 }
 
+/**
+ * Read the ?printer=<id> deep link used by the queue badge and the
+ * "next in queue" widget on the printer cards. 'unassigned' maps to the -1
+ * sentinel the filter already uses for jobs with no printer.
+ */
+function parsePrinterParam(raw: string | null): number | null {
+  if (raw === null) return null;
+  if (raw === 'unassigned') return -1;
+  const id = parseInt(raw, 10);
+  return Number.isFinite(id) ? id : null;
+}
+
 export function QueuePage() {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const { showToast } = useToast();
   const { hasPermission, hasAnyPermission, canModify } = useAuth();
-  const [filterPrinter, setFilterPrinter] = useState<number | null>(null);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const printerParam = searchParams.get('printer');
+  const [filterPrinter, setFilterPrinter] = useState<number | null>(() =>
+    parsePrinterParam(printerParam),
+  );
+
+  // The route does not remount when only the query string changes, so follow
+  // the param when another printer's queue badge is clicked from this page.
+  useEffect(() => {
+    setFilterPrinter(parsePrinterParam(printerParam));
+  }, [printerParam]);
+
+  // Mirror the dropdown back into the URL so a refresh, a shared link or the
+  // back button all land on the same filter.
+  const handlePrinterFilterChange = useCallback((value: string) => {
+    const next = value === 'unassigned' ? -1 : value === '' ? null : Number(value);
+    setFilterPrinter(next);
+    setSearchParams(
+      (prev) => {
+        const params = new URLSearchParams(prev);
+        if (next === null) params.delete('printer');
+        else params.set('printer', next === -1 ? 'unassigned' : String(next));
+        return params;
+      },
+      { replace: true },
+    );
+  }, [setSearchParams]);
   const [filterStatus, setFilterStatus] = useState<string>('');
   const [filterLocation, setFilterLocation] = useState<string>('');
   const [showClearHistoryConfirm, setShowClearHistoryConfirm] = useState(false);
@@ -1111,12 +1149,7 @@ export function QueuePage() {
         <select
           className="px-2 sm:px-3 py-2 text-sm sm:text-base bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none min-w-0 flex-1 sm:flex-none"
           value={filterPrinter === -1 ? 'unassigned' : (filterPrinter || '')}
-          onChange={(e) => {
-            const val = e.target.value;
-            if (val === 'unassigned') setFilterPrinter(-1);
-            else if (val === '') setFilterPrinter(null);
-            else setFilterPrinter(Number(val));
-          }}
+          onChange={(e) => handlePrinterFilterChange(e.target.value)}
         >
           <option value="">{t('queue.filter.allPrinters')}</option>
           <option value="unassigned">{t('queue.filter.unassigned')}</option>

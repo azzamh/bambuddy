@@ -118,12 +118,12 @@ describe('PrinterQueueWidget', () => {
   });
 
   describe('link behavior', () => {
-    it('links to queue page', async () => {
+    it('links to the queue page filtered to this printer', async () => {
       render(<PrinterQueueWidget printerId={1} />);
 
       await waitFor(() => {
         const link = screen.getByRole('link');
-        expect(link).toHaveAttribute('href', '/queue');
+        expect(link).toHaveAttribute('href', '/queue?printer=1');
       });
     });
   });

@@ -38,7 +38,7 @@ export function PrinterQueueWidget({ printerId, printerModel, loadedFilamentType
   // to the same /clear-plate endpoint, so the widget button was pure noise.
   return (
     <Link
-      to="/queue"
+      to={`/queue?printer=${printerId}`}
       className="block mb-3 p-3 bg-bambu-dark rounded-lg hover:bg-bambu-dark-tertiary transition-colors"
     >
       <div className="flex items-center justify-between gap-3">
