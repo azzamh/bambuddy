@@ -705,6 +705,108 @@ function isSliceableFilename(filename: string): boolean {
   return lower.endsWith('.stl') || lower.endsWith('.3mf') || lower.endsWith('.step') || lower.endsWith('.stp');
 }
 
+// Overflow menu for a list row. Download, rename, thumbnail and delete live
+// here so the row keeps a single line of icons — with all of them inline the
+// 80px actions column wrapped them onto three lines.
+interface FileRowActionsMenuProps {
+  file: LibraryFileListItem;
+  onDownload: (id: number) => void;
+  onRename: (file: LibraryFileListItem) => void;
+  onGenerateThumbnail: (file: LibraryFileListItem) => void;
+  isGeneratingThumbnail: boolean;
+  onDelete: (id: number) => void;
+  /** Open above the button for rows near the bottom of the list */
+  openUpward?: boolean;
+  hasPermission: (permission: Permission) => boolean;
+  canModify: (resource: 'queue' | 'archives' | 'library', action: 'update' | 'delete' | 'reprint', createdById: number | null | undefined) => boolean;
+  t: TFunction;
+}
+
+function FileRowActionsMenu({
+  file,
+  onDownload,
+  onRename,
+  onGenerateThumbnail,
+  isGeneratingThumbnail,
+  onDelete,
+  openUpward = false,
+  hasPermission,
+  canModify,
+  t,
+}: FileRowActionsMenuProps) {
+  const [open, setOpen] = useState(false);
+
+  const canRead = hasPermission('library:read');
+  const canUpdate = canModify('library', 'update', file.created_by_id);
+  const canDelete = canModify('library', 'delete', file.created_by_id);
+
+  const itemClass = (allowed: boolean, danger = false) =>
+    `w-full px-3 py-1.5 text-left text-sm flex items-center gap-2 ${
+      allowed
+        ? `${danger ? 'text-red-400' : 'text-white'} hover:bg-bambu-dark`
+        : 'text-bambu-gray cursor-not-allowed'
+    }`;
+
+  return (
+    <div className="relative">
+      <button
+        onClick={() => setOpen(!open)}
+        className="p-1.5 rounded transition-colors hover:bg-bambu-dark text-bambu-gray hover:text-white"
+        title={t('common.actions')}
+      >
+        <MoreVertical className="w-4 h-4" />
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
+          <div className={`absolute right-0 z-20 py-1 border rounded-lg shadow-xl bg-bambu-dark-secondary border-bambu-dark-tertiary min-w-[160px] ${
+            openUpward ? 'bottom-full mb-1' : 'top-full mt-1'
+          }`}>
+            <button
+              className={itemClass(canRead)}
+              onClick={() => { if (canRead) { onDownload(file.id); setOpen(false); } }}
+              disabled={!canRead}
+              title={!canRead ? t('fileManager.noPermissionDownload') : undefined}
+            >
+              <Download className="w-3.5 h-3.5" />
+              {t('common.download')}
+            </button>
+            <button
+              className={itemClass(canUpdate)}
+              onClick={() => { if (canUpdate) { onRename(file); setOpen(false); } }}
+              disabled={!canUpdate}
+              title={!canUpdate ? t('fileManager.noPermissionRenameFile') : undefined}
+            >
+              <Pencil className="w-3.5 h-3.5" />
+              {t('common.rename')}
+            </button>
+            {file.file_type === 'stl' && (
+              <button
+                className={itemClass(canUpdate)}
+                onClick={() => { if (canUpdate) { onGenerateThumbnail(file); setOpen(false); } }}
+                disabled={isGeneratingThumbnail || !canUpdate}
+                title={!canUpdate ? t('fileManager.noPermissionGenerateThumbnail') : undefined}
+              >
+                <Image className="w-3.5 h-3.5" />
+                {t('fileManager.generateThumbnail')}
+              </button>
+            )}
+            <button
+              className={itemClass(canDelete, true)}
+              onClick={() => { if (canDelete) { onDelete(file.id); setOpen(false); } }}
+              disabled={!canDelete}
+              title={!canDelete ? t('fileManager.noPermissionDeleteFile') : undefined}
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              {t('common.delete')}
+            </button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 // File Card
 interface FileCardProps {
   file: LibraryFileListItem;
@@ -2294,9 +2396,9 @@ export function FileManagerPage() {
             </div>
           ) : (
             <div className="flex-1 lg:overflow-y-auto">
-              <div className="overflow-hidden border rounded-lg bg-bambu-dark-secondary border-bambu-dark-tertiary">
+              <div className="overflow-x-auto border rounded-lg bg-bambu-dark-secondary border-bambu-dark-tertiary">
                 {/* List header - hidden on mobile, show simplified on small screens */}
-                <div className={`hidden lg:grid ${authEnabled ? 'grid-cols-[auto_1fr_120px_100px_100px_100px_80px]' : 'grid-cols-[auto_1fr_100px_100px_100px_80px]'} gap-4 px-4 py-2 bg-bambu-dark-secondary border-b border-bambu-dark-tertiary text-xs text-bambu-gray font-medium`}>
+                <div className={`hidden xl:grid ${authEnabled ? 'grid-cols-[auto_minmax(12rem,1fr)_100px_80px_80px_70px_auto]' : 'grid-cols-[auto_minmax(12rem,1fr)_80px_80px_70px_auto]'} gap-3 px-4 py-2 bg-bambu-dark-secondary border-b border-bambu-dark-tertiary text-xs text-bambu-gray font-medium`}>
                   <div className="w-6" />
                   <div>{t('common.name')}</div>
                   {authEnabled && <div>{t('fileManager.uploadedBy', { defaultValue: 'Uploaded By' })}</div>}
@@ -2306,10 +2408,10 @@ export function FileManagerPage() {
                   <div />
                 </div>
                 {/* List rows */}
-                {filteredAndSortedFiles.map((file) => (
+                {filteredAndSortedFiles.map((file, rowIndex) => (
                   <div
                     key={file.id}
-                    className={`grid grid-cols-[auto_1fr] ${authEnabled ? 'lg:grid-cols-[auto_1fr_120px_100px_100px_100px_80px]' : 'lg:grid-cols-[auto_1fr_100px_100px_100px_80px]'} gap-x-3 gap-y-2 lg:gap-4 px-4 py-3 items-center border-b border-bambu-dark-tertiary last:border-b-0 cursor-pointer hover:bg-bambu-dark/50 transition-colors ${
+                    className={`grid grid-cols-[auto_1fr] ${authEnabled ? 'xl:grid-cols-[auto_minmax(12rem,1fr)_100px_80px_80px_70px_auto]' : 'xl:grid-cols-[auto_minmax(12rem,1fr)_80px_80px_70px_auto]'} gap-x-3 gap-y-2 px-4 py-3 items-center border-b border-bambu-dark-tertiary last:border-b-0 cursor-pointer hover:bg-bambu-dark/50 transition-colors ${
                       selectedFiles.includes(file.id) ? 'bg-bambu-green/10' : ''
                     }`}
                     onClick={() => handleFileSelect(file.id)}
@@ -2352,7 +2454,7 @@ export function FileManagerPage() {
                         )}
                       </div>
                       <div className="min-w-0">
-                        <div className="text-sm text-white break-words lg:truncate" title={file.print_name || file.filename}>
+                        <div className="text-sm text-white break-words xl:truncate" title={file.print_name || file.filename}>
                           {file.print_name || file.filename}
                         </div>
                         {globalSearch && (
@@ -2365,7 +2467,7 @@ export function FileManagerPage() {
                     </div>
                     {/* Uploaded By - only show when auth is enabled */}
                     {authEnabled && (
-                      <div className="items-center hidden gap-1 text-sm lg:flex text-bambu-gray">
+                      <div className="items-center hidden gap-1 text-sm xl:flex text-bambu-gray">
                         {file.created_by_username ? (
                           <>
                             <User className="w-3 h-3" />
@@ -2377,7 +2479,7 @@ export function FileManagerPage() {
                       </div>
                     )}
                     {/* Type */}
-                    <div className="hidden lg:block">
+                    <div className="hidden xl:block">
                       <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${
                         file.file_type === '3mf' ? 'bg-bambu-green/20 text-bambu-green'
                         : file.file_type === 'gcode' ? 'bg-blue-500/20 text-blue-400'
@@ -2388,13 +2490,13 @@ export function FileManagerPage() {
                       </span>
                     </div>
                     {/* Size */}
-                    <div className="hidden text-sm lg:block text-bambu-gray">{formatFileSize(file.file_size)}</div>
+                    <div className="hidden text-sm xl:block text-bambu-gray">{formatFileSize(file.file_size)}</div>
                     {/* Prints */}
-                    <div className="hidden text-sm lg:block text-bambu-gray">{file.print_count > 0 ? `${file.print_count}x` : '-'}</div>
+                    <div className="hidden text-sm xl:block text-bambu-gray">{file.print_count > 0 ? `${file.print_count}x` : '-'}</div>
                     {/* Actions — drop to their own line under the name on mobile
                         so the filename gets the full row width */}
                     <div
-                      className="flex flex-wrap items-center gap-1 col-start-2 lg:col-start-auto"
+                      className="flex flex-nowrap items-center gap-1 col-start-2 xl:col-start-auto"
                       onClick={(e) => e.stopPropagation()}
                     >
                       {isSlicedFilename(file.filename) && (
@@ -2464,56 +2566,18 @@ export function FileManagerPage() {
                           <Box className="w-4 h-4" />
                         </button>
                       )}
-                      <button
-                        onClick={() => hasPermission('library:read') && handleDownload(file.id)}
-                        className={`p-1.5 rounded transition-colors ${
-                          hasPermission('library:read')
-                            ? 'hover:bg-bambu-dark text-bambu-gray hover:text-white'
-                            : 'text-bambu-gray/50 cursor-not-allowed'
-                        }`}
-                        title={hasPermission('library:read') ? t('common.download') : t('fileManager.noPermissionDownload')}
-                        disabled={!hasPermission('library:read')}
-                      >
-                        <Download className="w-4 h-4" />
-                      </button>
-                      <button
-                        onClick={() => canModify('library', 'update', file.created_by_id) && setRenameItem({ type: 'file', id: file.id, name: file.filename })}
-                        className={`p-1.5 rounded transition-colors ${
-                          canModify('library', 'update', file.created_by_id)
-                            ? 'hover:bg-bambu-dark text-bambu-gray hover:text-white'
-                            : 'text-bambu-gray/50 cursor-not-allowed'
-                        }`}
-                        title={canModify('library', 'update', file.created_by_id) ? t('common.rename') : t('fileManager.noPermissionRenameFile')}
-                        disabled={!canModify('library', 'update', file.created_by_id)}
-                      >
-                        <Pencil className="w-4 h-4" />
-                      </button>
-                      {file.file_type === 'stl' && (
-                        <button
-                          onClick={() => canModify('library', 'update', file.created_by_id) && singleThumbnailMutation.mutate(file.id)}
-                          className={`p-1.5 rounded transition-colors ${
-                            canModify('library', 'update', file.created_by_id)
-                              ? 'hover:bg-bambu-dark text-bambu-gray hover:text-bambu-green'
-                              : 'text-bambu-gray/50 cursor-not-allowed'
-                          }`}
-                          title={canModify('library', 'update', file.created_by_id) ? t('fileManager.generateThumbnail') : t('fileManager.noPermissionGenerateThumbnail')}
-                          disabled={singleThumbnailMutation.isPending || !canModify('library', 'update', file.created_by_id)}
-                        >
-                          <Image className="w-4 h-4" />
-                        </button>
-                      )}
-                      <button
-                        onClick={() => canModify('library', 'delete', file.created_by_id) && setDeleteConfirm({ type: 'file', id: file.id })}
-                        className={`p-1.5 rounded transition-colors ${
-                          canModify('library', 'delete', file.created_by_id)
-                            ? 'hover:bg-bambu-dark text-bambu-gray hover:text-red-400'
-                            : 'text-bambu-gray/50 cursor-not-allowed'
-                        }`}
-                        title={canModify('library', 'delete', file.created_by_id) ? t('common.delete') : t('fileManager.noPermissionDeleteFile')}
-                        disabled={!canModify('library', 'delete', file.created_by_id)}
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+                      <FileRowActionsMenu
+                        file={file}
+                        onDownload={handleDownload}
+                        onRename={(f) => setRenameItem({ type: 'file', id: f.id, name: f.filename })}
+                        onGenerateThumbnail={(f) => singleThumbnailMutation.mutate(f.id)}
+                        isGeneratingThumbnail={singleThumbnailMutation.isPending}
+                        onDelete={(id) => setDeleteConfirm({ type: 'file', id })}
+                        openUpward={rowIndex >= filteredAndSortedFiles.length - 2 && filteredAndSortedFiles.length > 2}
+                        hasPermission={hasPermission}
+                        canModify={canModify}
+                        t={t}
+                      />
                     </div>
                   </div>
                 ))}
