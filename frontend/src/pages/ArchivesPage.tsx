@@ -59,7 +59,7 @@ import { api } from '../api/client';
 import { SliceModal } from '../components/SliceModal';
 import { openInSlicer, type SlicerType } from '../utils/slicer';
 import { formatDateTime, formatDateOnly, parseUTCDate, type TimeFormat, formatDuration } from '../utils/date';
-import { getCurrencySymbol } from '../utils/currency';
+import { formatCurrency } from '../utils/currency';
 import { useIsMobile } from '../hooks/useIsMobile';
 import type { Archive, ProjectListItem } from '../api/client';
 import { Card, CardContent } from '../components/Card';
@@ -148,7 +148,7 @@ function ArchiveCard({
   timeFormat = 'system',
   preferredSlicer = 'bambu_studio',
   useSlicerApi = false,
-  currency,
+  currencyCode,
   t,
   onNavigateToArchive,
 }: {
@@ -162,7 +162,7 @@ function ArchiveCard({
   timeFormat?: TimeFormat;
   preferredSlicer?: SlicerType;
   useSlicerApi?: boolean;
-  currency: string;
+  currencyCode: string;
   t: TFunction;
   onNavigateToArchive?: (archiveId: number) => void;
 }) {
@@ -1000,13 +1000,13 @@ function ArchiveCard({
               {archive.cost != null && (
                 <div className="flex items-center gap-1.5">
                   <Coins className="w-3 h-3" />
-                  {currency}{archive.cost.toFixed(2)}
+                  {formatCurrency(archive.cost, currencyCode)}
                 </div>
               )}
                 {archive.energy_cost != null && (
                   <div className="flex items-center gap-1.5" title={`${t('stats.energyUsed')}: ${archive.energy_kwh?.toFixed(3) || 'N/A'} kWh`}>
                     <Zap className="w-3 h-3" />
-                    {currency}{archive.energy_cost.toFixed(2)}
+                    {formatCurrency(archive.energy_cost, currencyCode)}
                   </div>
                 )}
             </div>
@@ -2590,7 +2590,7 @@ export function ArchivesPage() {
   const timeFormat: TimeFormat = settings?.time_format || 'system';
   const preferredSlicer: SlicerType = settings?.preferred_slicer || 'bambu_studio';
   const useSlicerApi = settings?.use_slicer_api ?? false;
-  const currency = getCurrencySymbol(settings?.currency || 'USD');
+  const currencyCode = settings?.currency || 'USD';
 
   const bulkDeleteMutation = useMutation({
     mutationFn: async (ids: number[]) => {
@@ -3472,7 +3472,7 @@ export function ArchivesPage() {
                 timeFormat={timeFormat}
                 preferredSlicer={preferredSlicer}
                 useSlicerApi={useSlicerApi}
-                currency={currency}
+                currencyCode={currencyCode}
                 t={t}
                 onNavigateToArchive={handleNavigateToArchive}
               />

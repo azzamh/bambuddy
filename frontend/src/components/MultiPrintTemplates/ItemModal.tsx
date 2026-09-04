@@ -287,7 +287,7 @@ export function ItemModal({
                     filamentReqs={itemFilamentReqs}
                     manualMappings={itemManualMappings}
                     onManualMappingChange={onItemManualMappingsChange}
-                    currencySymbol=""
+                    currencyCode={settings?.currency || 'USD'}
                     defaultCostPerKg={0}
                     defaultExpanded={true}
                   />
