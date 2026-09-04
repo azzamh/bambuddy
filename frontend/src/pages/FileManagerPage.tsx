@@ -2296,7 +2296,7 @@ export function FileManagerPage() {
             <div className="flex-1 lg:overflow-y-auto">
               <div className="overflow-hidden border rounded-lg bg-bambu-dark-secondary border-bambu-dark-tertiary">
                 {/* List header - hidden on mobile, show simplified on small screens */}
-                <div className={`hidden sm:grid ${authEnabled ? 'grid-cols-[auto_1fr_120px_100px_100px_100px_80px]' : 'grid-cols-[auto_1fr_100px_100px_100px_80px]'} gap-4 px-4 py-2 bg-bambu-dark-secondary border-b border-bambu-dark-tertiary text-xs text-bambu-gray font-medium`}>
+                <div className={`hidden lg:grid ${authEnabled ? 'grid-cols-[auto_1fr_120px_100px_100px_100px_80px]' : 'grid-cols-[auto_1fr_100px_100px_100px_80px]'} gap-4 px-4 py-2 bg-bambu-dark-secondary border-b border-bambu-dark-tertiary text-xs text-bambu-gray font-medium`}>
                   <div className="w-6" />
                   <div>{t('common.name')}</div>
                   {authEnabled && <div>{t('fileManager.uploadedBy', { defaultValue: 'Uploaded By' })}</div>}
@@ -2309,7 +2309,7 @@ export function FileManagerPage() {
                 {filteredAndSortedFiles.map((file) => (
                   <div
                     key={file.id}
-                    className={`grid grid-cols-[auto_1fr] ${authEnabled ? 'sm:grid-cols-[auto_1fr_120px_100px_100px_100px_80px]' : 'sm:grid-cols-[auto_1fr_100px_100px_100px_80px]'} gap-x-3 gap-y-2 sm:gap-4 px-4 py-3 items-center border-b border-bambu-dark-tertiary last:border-b-0 cursor-pointer hover:bg-bambu-dark/50 transition-colors ${
+                    className={`grid grid-cols-[auto_1fr] ${authEnabled ? 'lg:grid-cols-[auto_1fr_120px_100px_100px_100px_80px]' : 'lg:grid-cols-[auto_1fr_100px_100px_100px_80px]'} gap-x-3 gap-y-2 lg:gap-4 px-4 py-3 items-center border-b border-bambu-dark-tertiary last:border-b-0 cursor-pointer hover:bg-bambu-dark/50 transition-colors ${
                       selectedFiles.includes(file.id) ? 'bg-bambu-green/10' : ''
                     }`}
                     onClick={() => handleFileSelect(file.id)}
@@ -2352,7 +2352,7 @@ export function FileManagerPage() {
                         )}
                       </div>
                       <div className="min-w-0">
-                        <div className="text-sm text-white break-words sm:truncate" title={file.print_name || file.filename}>
+                        <div className="text-sm text-white break-words lg:truncate" title={file.print_name || file.filename}>
                           {file.print_name || file.filename}
                         </div>
                         {globalSearch && (
@@ -2361,24 +2361,11 @@ export function FileManagerPage() {
                             <span className="truncate">{folderPathOf(file.folder_id) || t('fileManager.allFiles')}</span>
                           </div>
                         )}
-                        {/* The type/size/prints columns are hidden on mobile, so
-                            fold them into a single line under the name */}
-                        <div className="flex flex-wrap items-center mt-1 text-xs gap-x-2 text-bambu-gray sm:hidden">
-                          <span className="font-medium">{file.file_type.toUpperCase()}</span>
-                          <span>{formatFileSize(file.file_size)}</span>
-                          {file.print_count > 0 && <span>{file.print_count}x</span>}
-                          {authEnabled && file.created_by_username && (
-                            <span className="flex items-center gap-1">
-                              <User className="w-3 h-3" />
-                              {file.created_by_username}
-                            </span>
-                          )}
-                        </div>
                       </div>
                     </div>
                     {/* Uploaded By - only show when auth is enabled */}
                     {authEnabled && (
-                      <div className="items-center hidden gap-1 text-sm sm:flex text-bambu-gray">
+                      <div className="items-center hidden gap-1 text-sm lg:flex text-bambu-gray">
                         {file.created_by_username ? (
                           <>
                             <User className="w-3 h-3" />
@@ -2390,7 +2377,7 @@ export function FileManagerPage() {
                       </div>
                     )}
                     {/* Type */}
-                    <div className="hidden sm:block">
+                    <div className="hidden lg:block">
                       <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${
                         file.file_type === '3mf' ? 'bg-bambu-green/20 text-bambu-green'
                         : file.file_type === 'gcode' ? 'bg-blue-500/20 text-blue-400'
@@ -2401,13 +2388,13 @@ export function FileManagerPage() {
                       </span>
                     </div>
                     {/* Size */}
-                    <div className="hidden text-sm sm:block text-bambu-gray">{formatFileSize(file.file_size)}</div>
+                    <div className="hidden text-sm lg:block text-bambu-gray">{formatFileSize(file.file_size)}</div>
                     {/* Prints */}
-                    <div className="hidden text-sm sm:block text-bambu-gray">{file.print_count > 0 ? `${file.print_count}x` : '-'}</div>
+                    <div className="hidden text-sm lg:block text-bambu-gray">{file.print_count > 0 ? `${file.print_count}x` : '-'}</div>
                     {/* Actions — drop to their own line under the name on mobile
                         so the filename gets the full row width */}
                     <div
-                      className="flex flex-wrap items-center gap-1 col-start-2 sm:col-start-auto"
+                      className="flex flex-wrap items-center gap-1 col-start-2 lg:col-start-auto"
                       onClick={(e) => e.stopPropagation()}
                     >
                       {isSlicedFilename(file.filename) && (
