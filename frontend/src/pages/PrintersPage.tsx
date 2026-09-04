@@ -2316,12 +2316,17 @@ function PrinterCard({
   const getSpacing = () => {
     switch (cardSize) {
       case 1: return 'mb-2';
-      case 2: return 'mb-4';
+      case 2: return 'mb-3';
       case 3: return 'mb-5';
       case 4: return 'mb-6';
       default: return 'mb-4';
     }
   };
+
+  // S and M exist to fit more printers on screen, so their sections sit closer
+  // together than on the roomier L / XL cards.
+  const isDenseCard = cardSize <= 2;
+  const sectionGap = isDenseCard ? 'mt-2' : 'mt-3';
 
   const canDrop = isConnected && status?.state !== 'RUNNING' && status?.state !== 'PAUSE' && hasPermission('printers:control');
 
@@ -2835,7 +2840,7 @@ function PrinterCard({
               /* Expanded: Full status section */
               <>
                 {/* Current Print or Idle Placeholder */}
-                <div className="relative p-3 mb-4 rounded-lg bg-bambu-dark">
+                <div className={`relative p-3 rounded-lg bg-bambu-dark ${isDenseCard ? 'mb-2' : 'mb-4'}`}>
                   {/* Skip Objects button - top right corner, always visible */}
                   <button
                     onClick={() => setShowSkipObjectsModal(true)}
@@ -3077,7 +3082,7 @@ function PrinterCard({
               const chamberFan = status.big_fan2_speed;
 
               return (
-                <div className="mt-3">
+                <div className={sectionGap}>
                   {/* Section Header */}
                   <div className="flex items-center gap-2 mb-2">
                     <span className="text-[10px] uppercase tracking-wider text-bambu-gray font-medium">
@@ -3374,20 +3379,22 @@ function PrinterCard({
               const isDualNozzle = printer.nozzle_count === 2 || status?.temperatures?.nozzle_2 !== undefined;
 
               return (
-                <div className="mt-3">
+                <div className={sectionGap}>
                   {/* Section Header */}
-                  <div className="flex items-center gap-2 mb-2">
+                  <div className="flex items-center gap-2 mb-1.5">
                     <span className="text-[10px] uppercase tracking-wider text-bambu-gray font-medium">
                       {t('printers.filaments')}
                     </span>
                     <div className="flex-1 h-px bg-bambu-dark-tertiary/30" />
                   </div>
 
-                  {/* AMS Content */}
-                  <div className="space-y-3">
-                    {/* Row 1-2: Regular AMS (4-tray) in 2-column grid */}
+                  {/* AMS Content — one 4-column grid so AMS units, HT units and
+                      the external spool line up on the same row instead of
+                      stacking into separate rows and stretching the card */}
+                  <div className="grid grid-cols-4 gap-2 items-start">
+                    {/* Regular AMS (4-tray) takes two of the four columns */}
                     {regularAms.length > 0 && (
-                      <div className="grid grid-cols-2 gap-3">
+                      <>
                         {regularAms.map((ams) => {
                         const mappedExtruderId = amsExtruderMap[String(ams.id)];
                         const normalizedId = ams.id >= 128 ? ams.id - 128 : ams.id;
@@ -3396,7 +3403,7 @@ function PrinterCard({
                         const isRightNozzle = extruderId === 0;
 
                         return (
-                          <div key={ams.id} className="p-2.5 bg-bambu-dark rounded-lg border border-bambu-dark-tertiary/30">
+                          <div key={ams.id} className="col-span-2 p-2.5 bg-bambu-dark rounded-lg border border-bambu-dark-tertiary/30">
                             {/* Header: Label + Stats (no icon) */}
                             <div className="flex items-center justify-between mb-2">
                               <div className="flex items-center gap-1.5">
@@ -3830,12 +3837,12 @@ function PrinterCard({
                           </div>
                         );
                       })}
-                    </div>
+                      </>
                   )}
 
-                    {/* Row 3: HT AMS + External spools (same style as regular AMS, 4 across) */}
+                    {/* HT AMS + external spools each take one column */}
                     {(htAms.length > 0 || status.vt_tray.length > 0) && (
-                      <div className="grid grid-cols-4 gap-3">
+                      <>
                       {/* HT AMS units - name/badge top, slot left, stats right */}
                       {htAms.map((ams) => {
                         const mappedExtruderId = amsExtruderMap[String(ams.id)];
@@ -4256,7 +4263,7 @@ function PrinterCard({
                       })}
                       {/* External spool(s) - grouped in one card like regular AMS */}
                       {status.vt_tray.length > 0 && (
-                        <div className={`p-2.5 bg-bambu-dark rounded-lg border border-bambu-dark-tertiary/30 ${status.vt_tray.length === 1 ? 'grid-cols-1' : 'grid-cols-2'}`}>
+                        <div className={`p-2.5 bg-bambu-dark rounded-lg border border-bambu-dark-tertiary/30 ${status.vt_tray.length > 1 ? 'col-span-2' : ''}`}>
                           <div className="flex items-center gap-1 mb-2">
                             <span className="text-[10px] text-white font-medium">{t('printers.external')}</span>
                           </div>
@@ -4536,7 +4543,7 @@ function PrinterCard({
                           </div>
                         </div>
                       )}
-                      </div>
+                      </>
                     )}
                   </div>
                 </div>
