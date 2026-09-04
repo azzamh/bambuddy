@@ -68,6 +68,17 @@ import { formatFileSize } from '../utils/file';
 
 type SortField = 'name' | 'date' | 'size' | 'type' | 'prints';
 type SortDirection = 'asc' | 'desc';
+// Where the unified search box looks: the open folder only, or the whole library.
+type SearchScope = 'folder' | 'all';
+
+// One entry per folder in the flattened tree index.
+interface FolderIndexEntry {
+  folder: LibraryFolderTree;
+  chain: LibraryFolderTree[];
+  path: string;
+  parentPath: string;
+  ancestorIds: number[];
+}
 type TFunction = (key: string, options?: Record<string, unknown>) => string;
 
 // New Folder Modal
@@ -710,13 +721,15 @@ interface FileCardProps {
   onRename?: (file: LibraryFileListItem) => void;
   onGenerateThumbnail?: (file: LibraryFileListItem) => void;
   thumbnailVersion?: number;
+  /** Containing folder, shown while searching across the whole library */
+  folderPath?: string;
   hasPermission: (permission: Permission) => boolean;
   canModify: (resource: 'queue' | 'archives' | 'library', action: 'update' | 'delete' | 'reprint', createdById: number | null | undefined) => boolean;
   authEnabled: boolean;
   t: TFunction;
 }
 
-function FileCard({ file, isSelected, isMobile, onSelect, onDelete, onDownload, onAddToQueue, onPrint, onSlice, useSlicerApi, onPreview3d, onRename, onGenerateThumbnail, thumbnailVersion, hasPermission, canModify, authEnabled, t }: FileCardProps) {
+function FileCard({ file, isSelected, isMobile, onSelect, onDelete, onDownload, onAddToQueue, onPrint, onSlice, useSlicerApi, onPreview3d, onRename, onGenerateThumbnail, thumbnailVersion, folderPath, hasPermission, canModify, authEnabled, t }: FileCardProps) {
   const [showActions, setShowActions] = useState(false);
 
   return (
@@ -755,6 +768,12 @@ function FileCard({ file, isSelected, isMobile, onSelect, onDelete, onDownload, 
         <h3 className="text-sm font-medium text-white truncate" title={file.print_name || file.filename}>
           {file.print_name || file.filename}
         </h3>
+        {folderPath && (
+          <div className="flex items-center gap-1 mt-1 text-xs text-bambu-gray" title={folderPath}>
+            <FolderOpen className="flex-shrink-0 w-3 h-3" />
+            <span className="truncate">{folderPath}</span>
+          </div>
+        )}
         <div className="flex items-center gap-3 mt-1 text-xs text-bambu-gray">
           <span>{formatFileSize(file.file_size)}</span>
           {file.print_time_seconds && (
@@ -999,7 +1018,9 @@ export function FileManagerPage() {
 
   // Filter and sort state (persist sort preferences to localStorage)
   const [searchQuery, setSearchQuery] = useState('');
-  const [folderSearch, setFolderSearch] = useState('');
+  const [searchScope, setSearchScope] = useState<SearchScope>(() => {
+    return localStorage.getItem('library-search-scope') === 'folder' ? 'folder' : 'all';
+  });
   const [mobileFolderSearch, setMobileFolderSearch] = useState('');
   const [isMobileFolderOpen, setIsMobileFolderOpen] = useState(false);
   const [filterType, setFilterType] = useState<string>('all');
@@ -1015,6 +1036,17 @@ export function FileManagerPage() {
 
   // Mobile detection for touch-friendly UI
   const isMobile = useIsMobile();
+
+  // One query box drives both the folder tree and the file list.
+  const trimmedQuery = searchQuery.trim();
+  const isSearching = trimmedQuery.length > 0;
+  // Searching "Everywhere" needs every file in the library, not just the open folder.
+  const globalSearch = isSearching && searchScope === 'all';
+
+  const handleScopeChange = useCallback((scope: SearchScope) => {
+    setSearchScope(scope);
+    localStorage.setItem('library-search-scope', scope);
+  }, []);
 
   // Update selectedFolderId when URL parameter changes (e.g., navigating from Project or Archive page)
   useEffect(() => {
@@ -1055,6 +1087,21 @@ export function FileManagerPage() {
     queryFn: () => api.getLibraryFiles(selectedFolderId, selectedFolderId === null),
   });
 
+  // Every file in the library, fetched only while searching everywhere.
+  // Omitting folder_id with include_root=false returns files from all folders.
+  const { data: allFiles, isLoading: allFilesLoading } = useQuery({
+    queryKey: ['library-files', 'all'],
+    queryFn: () => api.getLibraryFiles(null, false),
+    enabled: globalSearch,
+    staleTime: 30_000,
+  });
+
+  // The list the toolbar, filters and grid all work from.
+  const sourceFiles = useMemo(
+    () => (globalSearch ? allFiles ?? [] : files ?? []),
+    [globalSearch, allFiles, files],
+  );
+
   const { data: stats } = useQuery({
     queryKey: ['library-stats'],
     queryFn: () => api.getLibraryStats(),
@@ -1068,15 +1115,14 @@ export function FileManagerPage() {
 
   // Get unique file types for filter dropdown
   const fileTypes = useMemo(() => {
-    if (!files) return [];
-    const types = new Set(files.map((f) => f.file_type));
+    const types = new Set(sourceFiles.map((f) => f.file_type));
     return Array.from(types).sort();
-  }, [files]);
+  }, [sourceFiles]);
 
-  // Recursively filter folder tree by folderSearch
+  // Recursively filter folder tree by the unified search query
   const filterFolders = useCallback((items: LibraryFolderTree[]): LibraryFolderTree[] => {
-    if (!folderSearch.trim()) return items;
-    const q = folderSearch.toLowerCase();
+    if (!trimmedQuery) return items;
+    const q = trimmedQuery.toLowerCase();
     return items.reduce<LibraryFolderTree[]>((acc, folder) => {
       const nameMatch = folder.name.toLowerCase().includes(q);
       const filteredChildren = filterFolders(folder.children);
@@ -1085,12 +1131,69 @@ export function FileManagerPage() {
       }
       return acc;
     }, []);
-  }, [folderSearch]);
+  }, [trimmedQuery]);
 
   const filteredFolders = useMemo(() => {
     if (!folders) return [];
     return filterFolders(folders);
   }, [folders, filterFolders]);
+
+  // Flat index of the folder tree: full path + ancestor chain per folder.
+  // Powers breadcrumbs, folder search results and the "in folder" hint on files.
+  const folderIndex = useMemo(() => {
+    const index = new Map<number, FolderIndexEntry>();
+    const walk = (items: LibraryFolderTree[], chain: LibraryFolderTree[]) => {
+      for (const folder of items) {
+        const nextChain = [...chain, folder];
+        index.set(folder.id, {
+          folder,
+          chain: nextChain,
+          path: nextChain.map((f) => f.name).join(' / '),
+          parentPath: chain.map((f) => f.name).join(' / '),
+          ancestorIds: chain.map((f) => f.id),
+        });
+        walk(folder.children, nextChain);
+      }
+    };
+    walk(folders ?? [], []);
+    return index;
+  }, [folders]);
+
+  const folderPathOf = useCallback(
+    (folderId: number | null) => (folderId === null ? '' : folderIndex.get(folderId)?.path ?? ''),
+    [folderIndex],
+  );
+
+  // Folders whose name (or path) matches the query, honouring the search scope.
+  const folderMatches = useMemo(() => {
+    if (!isSearching) return [];
+    const q = trimmedQuery.toLowerCase();
+    return Array.from(folderIndex.values())
+      .filter((entry) => {
+        if (searchScope === 'folder') {
+          if (selectedFolderId === null) {
+            if (entry.ancestorIds.length > 0) return false;
+          } else if (!entry.ancestorIds.includes(selectedFolderId)) {
+            return false;
+          }
+        }
+        return entry.path.toLowerCase().includes(q);
+      })
+      .sort((a, b) => a.path.localeCompare(b.path));
+  }, [isSearching, trimmedQuery, folderIndex, searchScope, selectedFolderId]);
+
+  // Trail from the library root down to the folder that is currently open.
+  const breadcrumbs = useMemo(
+    () => (selectedFolderId === null ? [] : folderIndex.get(selectedFolderId)?.chain ?? []),
+    [selectedFolderId, folderIndex],
+  );
+
+  // Jumping to a search hit means browsing it, so the query is cleared.
+  const openFolderFromSearch = useCallback((folderId: number | null) => {
+    setSelectedFolderId(folderId);
+    setSelectedFiles([]);
+    setSearchQuery('');
+  }, []);
 
   // Flatten folder tree for mobile selector
   const flattenFoldersForMobile = useCallback((items: LibraryFolderTree[], depth = 0): { id: number; name: string; fileCount: number; depth: number }[] => {
@@ -1111,17 +1214,18 @@ export function FileManagerPage() {
 
   // Filter and sort files
   const filteredAndSortedFiles = useMemo(() => {
-    if (!files) return [];
+    let result = [...sourceFiles];
 
-    let result = [...files];
-
-    // Apply search filter
-    if (searchQuery.trim()) {
-      const query = searchQuery.toLowerCase();
+    // Apply search filter. When searching the whole library the containing
+    // folder path counts as a match too, so searching a folder name also
+    // surfaces everything inside it.
+    if (trimmedQuery) {
+      const query = trimmedQuery.toLowerCase();
       result = result.filter(
         (f) =>
           f.filename.toLowerCase().includes(query) ||
-          (f.print_name && f.print_name.toLowerCase().includes(query))
+          (f.print_name && f.print_name.toLowerCase().includes(query)) ||
+          (globalSearch && folderPathOf(f.folder_id).toLowerCase().includes(query))
       );
     }
 
@@ -1162,7 +1266,7 @@ export function FileManagerPage() {
     });
 
     return result;
-  }, [files, searchQuery, filterType, filterUsername, sortField, sortDirection]);
+  }, [sourceFiles, trimmedQuery, globalSearch, folderPathOf, filterType, filterUsername, sortField, sortDirection]);
 
   // Check if disk space is low
   const isDiskSpaceLow = useMemo(() => {
@@ -1375,9 +1479,8 @@ export function FileManagerPage() {
 
   // Get sliced files from selection
   const selectedSlicedFiles = useMemo(() => {
-    if (!files) return [];
-    return files.filter(f => selectedFiles.includes(f.id) && isSlicedFile(f.filename));
-  }, [files, selectedFiles, isSlicedFile]);
+    return sourceFiles.filter(f => selectedFiles.includes(f.id) && isSlicedFile(f.filename));
+  }, [sourceFiles, selectedFiles, isSlicedFile]);
 
   // Handlers
   const handleFileSelect = useCallback((id: number) => {
@@ -1427,7 +1530,7 @@ export function FileManagerPage() {
     localStorage.setItem('library-view-mode', mode);
   };
 
-  const isLoading = foldersLoading || filesLoading;
+  const isLoading = foldersLoading || filesLoading || (globalSearch && allFilesLoading);
 
   // Find the selected folder in the tree to check external status
   const selectedFolder = useMemo(() => {
@@ -1587,6 +1690,53 @@ export function FileManagerPage() {
         </div>
       )}
 
+      {/* Unified search: one box for folders and files, with a scope switch */}
+      <div className="flex flex-col gap-2 p-3 mb-4 border rounded-lg sm:flex-row sm:items-center bg-bambu-dark-secondary border-bambu-dark-tertiary">
+        <div className="relative flex-1 min-w-0">
+          <Search className="absolute w-4 h-4 -translate-y-1/2 left-3 top-1/2 text-bambu-gray" />
+          <input
+            type="text"
+            placeholder={t('fileManager.searchEverything')}
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full py-2 pl-10 pr-9 text-sm text-white border rounded-lg bg-bambu-dark border-bambu-dark-tertiary placeholder-bambu-gray focus:outline-none focus:border-bambu-green"
+          />
+          {searchQuery && (
+            <button
+              onClick={() => setSearchQuery('')}
+              className="absolute -translate-y-1/2 right-3 top-1/2 text-bambu-gray hover:text-white"
+              title={t('fileManager.clearSearch')}
+            >
+              <X className="w-4 h-4" />
+            </button>
+          )}
+        </div>
+        {/* Scope switch */}
+        <div className="flex items-center flex-shrink-0 gap-1 p-1 rounded-lg bg-bambu-dark">
+          {(['all', 'folder'] as SearchScope[]).map((scope) => (
+            <button
+              key={scope}
+              onClick={() => handleScopeChange(scope)}
+              className={`px-2.5 py-1 text-xs rounded transition-colors ${
+                searchScope === scope
+                  ? 'bg-bambu-dark-secondary text-white'
+                  : 'text-bambu-gray hover:text-white'
+              }`}
+            >
+              {scope === 'all' ? t('fileManager.scopeEverywhere') : t('fileManager.scopeThisFolder')}
+            </button>
+          ))}
+        </div>
+        {isSearching && (
+          <span className="flex-shrink-0 text-xs text-bambu-gray">
+            {t('fileManager.matchesSummary', {
+              folders: folderMatches.length,
+              files: filteredAndSortedFiles.length,
+            })}
+          </span>
+        )}
+      </div>
+
       {/* Main content */}
       <div className="flex flex-col flex-1 min-h-0 gap-4 lg:flex-row lg:gap-6">
         {/* Mobile folder selector */}
@@ -1594,7 +1744,7 @@ export function FileManagerPage() {
           <div className="relative">
             <input
               type="text"
-              placeholder="🔍 Search folders..."
+              placeholder={t('fileManager.jumpToFolder')}
               className="w-full bg-bambu-dark-secondary border border-bambu-dark-tertiary rounded-lg px-3 py-2.5 text-white focus:outline-none focus:border-bambu-green placeholder:text-bambu-gray/50"
               value={mobileFolderSearch}
               onChange={(e) => setMobileFolderSearch(e.target.value)}
@@ -1634,7 +1784,7 @@ export function FileManagerPage() {
                 })}
                 {folders && flattenFoldersForMobile(folders).filter(folderFilter).length === 0 && (
                   <div className="px-3 py-4 text-sm text-center text-bambu-gray">
-                    No folders match &quot;{mobileFolderSearch}&quot;
+                    {t('fileManager.noMatchingFolders')}
                   </div>
                 )}
               </div>
@@ -1705,19 +1855,20 @@ export function FileManagerPage() {
               </button>
             </div>
           </div>
-          {/* Folder search */}
-          <div className="px-3 pt-2 pb-2">
-            <div className="relative">
-              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-bambu-gray" />
-              <input
-                type="text"
-                placeholder="Search folders..."
-                value={folderSearch}
-                onChange={(e) => setFolderSearch(e.target.value)}
-                className="w-full pl-8 pr-3 py-1.5 bg-bambu-dark border border-bambu-dark-tertiary rounded text-sm text-white placeholder-bambu-gray focus:outline-none focus:border-bambu-green"
-              />
+          {/* The tree is filtered by the unified search box above */}
+          {isSearching && (
+            <div className="flex items-center gap-2 px-3 py-2 text-xs border-b border-bambu-dark-tertiary text-bambu-gray">
+              <Search className="w-3.5 h-3.5 flex-shrink-0" />
+              <span className="truncate">{t('fileManager.filteredBySearch')}</span>
+              <button
+                onClick={() => setSearchQuery('')}
+                className="ml-auto flex-shrink-0 hover:text-white"
+                title={t('fileManager.clearSearch')}
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
             </div>
-          </div>
+          )}
           <div className="flex-1 p-2 overflow-y-auto">
             {/* All Files (root) */}
             <div
@@ -1737,7 +1888,7 @@ export function FileManagerPage() {
                 and makes the preference take effect immediately. */}
             {filteredFolders?.map((folder) => (
               <FolderTreeItem
-                key={`${folder.id}-${collapseFoldersByDefault ? 'c' : 'e'}`}
+                key={`${folder.id}-${collapseFoldersByDefault ? 'c' : 'e'}-${isSearching ? 's' : 'b'}`}
                 folder={folder}
                 selectedFolderId={selectedFolderId}
                 onSelect={setSelectedFolderId}
@@ -1745,14 +1896,14 @@ export function FileManagerPage() {
                 onLink={setLinkFolder}
                 onRename={(f) => setRenameItem({ type: 'folder', id: f.id, name: f.name })}
                 wrapNames={wrapFolderNames}
-                defaultExpanded={!collapseFoldersByDefault}
+                defaultExpanded={isSearching || !collapseFoldersByDefault}
                 hasPermission={hasPermission}
                 t={t}
               />
             ))}
-            {filteredFolders?.length === 0 && folderSearch.trim() && (
+            {filteredFolders?.length === 0 && isSearching && (
               <div className="px-2 py-3 text-sm text-center text-bambu-gray">
-                No matching folders
+                {t('fileManager.noMatchingFolders')}
               </div>
             )}
           </div>
@@ -1760,6 +1911,32 @@ export function FileManagerPage() {
 
         {/* Files area */}
         <div className="flex flex-col flex-1 min-w-0 min-h-0">
+          {/* Breadcrumb trail — click any level to jump back up the tree */}
+          <div className="flex flex-wrap items-center gap-1 mb-3 text-sm">
+            <button
+              onClick={() => openFolderFromSearch(null)}
+              className={`flex items-center gap-1.5 px-2 py-1 rounded transition-colors ${
+                selectedFolderId === null ? 'bg-bambu-dark text-white' : 'text-bambu-gray hover:text-white hover:bg-bambu-dark'
+              }`}
+            >
+              <FileBox className="w-3.5 h-3.5" />
+              {t('fileManager.allFiles')}
+            </button>
+            {breadcrumbs.map((folder) => (
+              <span key={folder.id} className="flex items-center gap-1 min-w-0">
+                <ChevronRight className="w-3.5 h-3.5 flex-shrink-0 text-bambu-gray/60" />
+                <button
+                  onClick={() => openFolderFromSearch(folder.id)}
+                  className={`px-2 py-1 rounded truncate max-w-[12rem] transition-colors ${
+                    folder.id === selectedFolderId ? 'bg-bambu-dark text-white' : 'text-bambu-gray hover:text-white hover:bg-bambu-dark'
+                  }`}
+                  title={folder.name}
+                >
+                  {folder.name}
+                </button>
+              </span>
+            ))}
+          </div>
           {/* External folder info bar */}
           {selectedFolder?.is_external && (
             <div className="flex items-center gap-3 p-3 mb-4 border rounded-lg bg-purple-500/10 border-purple-500/30">
@@ -1795,20 +1972,8 @@ export function FileManagerPage() {
             </div>
           )}
           {/* Search, Filter, Sort toolbar - sticky on mobile for easier access */}
-          {files && files.length > 0 && (
+          {(sourceFiles.length > 0 || isSearching) && (
             <div className="sticky top-0 z-10 flex flex-wrap items-center gap-2 p-2 mb-4 border rounded-lg sm:gap-3 sm:p-3 bg-bambu-dark-secondary border-bambu-dark-tertiary lg:static">
-              {/* Search */}
-              <div className="relative w-full sm:w-auto sm:flex-1 sm:max-w-xs">
-                <Search className="absolute w-4 h-4 -translate-y-1/2 left-3 top-1/2 text-bambu-gray" />
-                <input
-                  type="text"
-                  placeholder={t('fileManager.searchFiles')}
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full pl-9 pr-3 py-1.5 bg-bambu-dark border border-bambu-dark-tertiary rounded text-sm text-white placeholder-bambu-gray focus:outline-none focus:border-bambu-green"
-                />
-              </div>
-
               {/* Type filter */}
               <div className="flex items-center gap-2">
                 <Filter className="hidden w-4 h-4 text-bambu-gray sm:block" />
@@ -1889,9 +2054,9 @@ export function FileManagerPage() {
               </div>
 
               {/* Results count */}
-              {(searchQuery || filterType !== 'all' || filterUsername) && (
+              {(isSearching || filterType !== 'all' || filterUsername) && (
                 <span className="hidden text-sm text-bambu-gray sm:inline">
-                  {t('fileManager.resultsCount', { showing: filteredAndSortedFiles.length, total: files.length })}
+                  {t('fileManager.resultsCount', { showing: filteredAndSortedFiles.length, total: sourceFiles.length })}
                 </span>
               )}
             </div>
@@ -1995,6 +2160,42 @@ export function FileManagerPage() {
             </div>
           )}
 
+          {/* Matching folders — same result list as the files below */}
+          {isSearching && folderMatches.length > 0 && (
+            <div className="mb-4 overflow-hidden border rounded-lg bg-bambu-dark-secondary border-bambu-dark-tertiary">
+              <div className="flex items-center gap-2 px-3 py-2 border-b border-bambu-dark-tertiary">
+                <FolderOpen className="w-4 h-4 text-bambu-green" />
+                <span className="text-sm font-medium text-white">{t('fileManager.folders')}</span>
+                <span className="text-xs text-bambu-gray">{folderMatches.length}</span>
+              </div>
+              <div className="overflow-y-auto max-h-56">
+                {folderMatches.map((entry) => (
+                  <button
+                    key={entry.folder.id}
+                    onClick={() => openFolderFromSearch(entry.folder.id)}
+                    className="flex items-center w-full gap-2 px-3 py-2 text-left transition-colors border-b border-bambu-dark-tertiary/60 last:border-b-0 hover:bg-bambu-dark"
+                  >
+                    {entry.folder.is_external ? (
+                      <FolderSymlink className="flex-shrink-0 w-4 h-4 text-purple-400" />
+                    ) : (
+                      <FolderOpen className="flex-shrink-0 w-4 h-4 text-bambu-green" />
+                    )}
+                    <span className="text-sm text-white truncate">{entry.folder.name}</span>
+                    {entry.parentPath && (
+                      <span className="text-xs truncate text-bambu-gray" title={entry.path}>
+                        {entry.parentPath}
+                      </span>
+                    )}
+                    <span className="flex-shrink-0 ml-auto text-xs text-bambu-gray">
+                      {entry.folder.file_count} {t('fileManager.files')}
+                    </span>
+                    <ChevronRight className="flex-shrink-0 w-4 h-4 text-bambu-gray" />
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* File grid/list */}
           {isLoading ? (
             <div className="flex items-center justify-center flex-1">
@@ -2003,7 +2204,7 @@ export function FileManagerPage() {
                 <p className="text-sm text-bambu-gray">{t('fileManager.loadingFiles')}</p>
               </div>
             </div>
-          ) : files?.length === 0 ? (
+          ) : !isSearching && sourceFiles.length === 0 ? (
             <div className="flex flex-col items-center justify-center flex-1">
               <div className="p-4 mb-4 bg-bambu-dark rounded-2xl">
                 <FileBox className="w-12 h-12 text-bambu-gray/50" />
@@ -2026,18 +2227,29 @@ export function FileManagerPage() {
               </Button>
             </div>
           ) : filteredAndSortedFiles.length === 0 ? (
-            <div className="flex flex-col items-center justify-center flex-1">
-              <div className="p-4 mb-4 bg-bambu-dark rounded-2xl">
-                <Search className="w-12 h-12 text-bambu-gray/50" />
+            /* Folder hits are already listed above, so keep this compact there */
+            folderMatches.length > 0 ? (
+              <div className="py-4 text-sm text-center text-bambu-gray">
+                {t('fileManager.noMatchingFiles')}
               </div>
-              <h3 className="mb-2 text-lg font-medium text-white">{t('fileManager.noMatchingFiles')}</h3>
-              <p className="max-w-md mb-6 text-center text-bambu-gray">
-                {t('fileManager.noMatchingFilesDescription')}
-              </p>
-              <Button variant="secondary" onClick={() => { setSearchQuery(''); setFilterType('all'); }}>
-                {t('fileManager.clearFilters')}
-              </Button>
-            </div>
+            ) : (
+              <div className="flex flex-col items-center justify-center flex-1">
+                <div className="p-4 mb-4 bg-bambu-dark rounded-2xl">
+                  <Search className="w-12 h-12 text-bambu-gray/50" />
+                </div>
+                <h3 className="mb-2 text-lg font-medium text-white">
+                  {isSearching ? t('fileManager.noSearchResults', { query: trimmedQuery }) : t('fileManager.noMatchingFiles')}
+                </h3>
+                <p className="max-w-md mb-6 text-center text-bambu-gray">
+                  {isSearching && searchScope === 'folder'
+                    ? t('fileManager.noSearchResultsDescription')
+                    : t('fileManager.noMatchingFilesDescription')}
+                </p>
+                <Button variant="secondary" onClick={() => { setSearchQuery(''); setFilterType('all'); setFilterUsername(''); }}>
+                  {t('fileManager.clearFilters')}
+                </Button>
+              </div>
+            )
           ) : viewMode === 'grid' ? (
             <div className="flex-1 lg:overflow-y-auto">
               <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
@@ -2052,7 +2264,7 @@ export function FileManagerPage() {
                     onDelete={(id) => setDeleteConfirm({ type: 'file', id })}
                     onDownload={handleDownload}
                     onAddToQueue={(id) => {
-                      const file = files?.find(f => f.id === id);
+                      const file = sourceFiles.find(f => f.id === id);
                       if (file) setScheduleFile(file);
                     }}
                     onPrint={setPrintFile}
@@ -2072,6 +2284,7 @@ export function FileManagerPage() {
                     onRename={(f) => setRenameItem({ type: 'file', id: f.id, name: f.filename })}
                     onGenerateThumbnail={(f) => singleThumbnailMutation.mutate(f.id)}
                     thumbnailVersion={thumbnailVersions[file.id]}
+                    folderPath={globalSearch ? folderPathOf(file.folder_id) || t('fileManager.allFiles') : undefined}
                     hasPermission={hasPermission}
                     canModify={canModify}
                     authEnabled={authEnabled}
@@ -2140,6 +2353,12 @@ export function FileManagerPage() {
                       </div>
                       <div className="min-w-0">
                         <div className="text-sm text-white truncate">{file.print_name || file.filename}</div>
+                        {globalSearch && (
+                          <div className="flex items-center gap-1 text-xs text-bambu-gray">
+                            <FolderOpen className="flex-shrink-0 w-3 h-3" />
+                            <span className="truncate">{folderPathOf(file.folder_id) || t('fileManager.allFiles')}</span>
+                          </div>
+                        )}
                       </div>
                     </div>
                     {/* Uploaded By - only show when auth is enabled */}

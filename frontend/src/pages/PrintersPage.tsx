@@ -2386,7 +2386,7 @@ function PrinterCard({
 
   return (
     <Card
-      className={`relative ${isSelected ? 'ring-2 ring-bambu-green' : ''} ${selectionMode ? 'cursor-pointer' : ''}`}
+      className={`relative h-full flex flex-col ${isSelected ? 'ring-2 ring-bambu-green' : ''} ${selectionMode ? 'cursor-pointer' : ''}`}
       onDragEnter={handleCardDragEnter}
       onDragOver={handleCardDragOver}
       onDragLeave={handleCardDragLeave}
@@ -2436,7 +2436,7 @@ function PrinterCard({
           </div>
         </div>
       )}
-      <CardContent className={cardSize >= 3 ? 'p-5' : ''}>
+      <CardContent className={`flex-1 flex flex-col ${cardSize >= 3 ? 'p-5' : ''}`}>
         {/* Header */}
         <div className={getSpacing()}>
           {/* Top row: Image, Name, Menu */}
@@ -4663,7 +4663,11 @@ function PrinterCard({
 
         {/* Connection Info & Actions - hidden in compact mode */}
         {viewMode === 'expanded' && (
-          <div className="flex flex-wrap items-center justify-end gap-2 pt-4 mt-4 border-t border-bambu-dark-tertiary">
+          <>
+            {/* Spacer: absorbs leftover height so the action bar sits at the bottom
+                of every card, keeping footers aligned across a row */}
+            <div className="flex-1" aria-hidden="true" />
+            <div className="flex flex-wrap items-center justify-end gap-2 pt-4 mt-4 border-t border-bambu-dark-tertiary">
               {/* Chamber Light */}
               <Button
                 variant="secondary"
@@ -4756,7 +4760,8 @@ function PrinterCard({
                   {t('common.print')}
                 </Button>
               )}
-          </div>
+            </div>
+          </>
         )}
       </CardContent>
 

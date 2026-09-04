@@ -225,8 +225,9 @@ describe('FileManagerPage', () => {
     it('shows All Files option', async () => {
       render(<FileManagerPage />);
 
+      // Appears in both the sidebar tree and the breadcrumb trail
       await waitFor(() => {
-        expect(screen.getByText('All Files')).toBeInTheDocument();
+        expect(screen.getAllByText('All Files').length).toBeGreaterThan(0);
       });
     });
 
@@ -341,12 +342,14 @@ describe('FileManagerPage', () => {
   });
 
   describe('search and filter', () => {
-    it('has search input', async () => {
+    it('has a unified search input for folders and files', async () => {
       render(<FileManagerPage />);
 
       await waitFor(() => {
-        expect(screen.getByPlaceholderText('Search files...')).toBeInTheDocument();
+        expect(screen.getByPlaceholderText('Search folders and files...')).toBeInTheDocument();
       });
+      expect(screen.getByText('Everywhere')).toBeInTheDocument();
+      expect(screen.getByText('This folder')).toBeInTheDocument();
     });
 
     it('has type filter', async () => {
