@@ -68,7 +68,7 @@ interface PlateConfigurationProps {
   preferLowestFilament?: boolean;
   defaultExpanded?: boolean;
   mappingDefaultExpanded?: boolean;
-  currencySymbol: string;
+  currencyCode: string;
   defaultCostPerKg: number;
 }
 
@@ -93,7 +93,7 @@ export const PlateConfiguration = forwardRef<PlateConfigurationHandle, PlateConf
       preferLowestFilament,
       defaultExpanded = false,
       mappingDefaultExpanded = false,
-      currencySymbol,
+      currencyCode,
       defaultCostPerKg,
     },
     ref,
@@ -350,7 +350,7 @@ export const PlateConfiguration = forwardRef<PlateConfigurationHandle, PlateConf
                 onManualMappingChange={(manualMappings) =>
                   onChange({ manualMappings })}
                 defaultExpanded={mappingDefaultExpanded}
-                currencySymbol={currencySymbol}
+                currencyCode={currencyCode}
                 defaultCostPerKg={defaultCostPerKg}
               />
             ) : null}

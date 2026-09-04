@@ -16,10 +16,11 @@ import type { ArchiveSlim } from '../api/client';
 import { MetricToggle, type Metric } from './MetricToggle';
 import { parseUTCDate } from '../utils/date';
 import { formatWeight } from '../utils/weight';
+import { formatCurrency } from '../utils/currency';
 
 interface FilamentTrendsProps {
   archives: ArchiveSlim[];
-  currency?: string;
+  currencyCode?: string;
   dateFrom?: string;
   dateTo?: string;
 }
@@ -29,7 +30,7 @@ const COLORS = ['#00ae42', '#3b82f6', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899'
 const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const HOUR_SUFFIXES = ['12am', '1am', '2am', '3am', '4am', '5am', '6am', '7am', '8am', '9am', '10am', '11am', '12pm', '1pm', '2pm', '3pm', '4pm', '5pm', '6pm', '7pm', '8pm', '9pm', '10pm', '11pm'];
 
-export function FilamentTrends({ archives, currency = '$', dateFrom, dateTo }: FilamentTrendsProps) {
+export function FilamentTrends({ archives, currencyCode = 'USD', dateFrom, dateTo }: FilamentTrendsProps) {
   const { t } = useTranslation();
   const [filamentTypeMetric, setFilamentTypeMetric] = useState<Metric>('weight');
   const [colorMetric, setColorMetric] = useState<Metric>('weight');
@@ -254,7 +255,7 @@ export function FilamentTrends({ archives, currency = '$', dateFrom, dateTo }: F
         <div className="bg-bambu-dark rounded-lg p-4">
           <div className="flex items-center justify-between gap-2">
             <p className="text-sm text-bambu-gray leading-none">{t('stats.periodCost')}</p>
-            <p className="text-2xl font-bold text-white leading-none">{currency}{totalCost.toFixed(2)}</p>
+            <p className="text-2xl font-bold text-white leading-none">{formatCurrency(totalCost, currencyCode)}</p>
           </div>
           <p className="text-xs text-bambu-gray">{totalPrints} {t('common.prints')}</p>
         </div>
@@ -268,7 +269,7 @@ export function FilamentTrends({ archives, currency = '$', dateFrom, dateTo }: F
             </p>
           </div>
           <p className="text-xs text-bambu-gray">
-            {currency}{totalPrints > 0 ? (totalCost / totalPrints).toFixed(2) : '0.00'} avg
+            {formatCurrency(totalPrints > 0 ? totalCost / totalPrints : 0, currencyCode)} avg
           </p>
         </div>
       </div>

@@ -37,7 +37,7 @@ import { api, type ArchiveSlim } from '../api/client';
 import { PrintCalendar } from '../components/PrintCalendar';
 import { FilamentTrends } from '../components/FilamentTrends';
 import { Dashboard, type DashboardWidget } from '../components/Dashboard';
-import { getCurrencySymbol } from '../utils/currency';
+import { formatCurrency } from '../utils/currency';
 import { formatWeight } from '../utils/weight';
 import { parseUTCDate, formatDuration } from '../utils/date';
 import { MetricToggle, type Metric } from '../components/MetricToggle';
@@ -118,7 +118,7 @@ const RECHARTS_TOOLTIP_STYLE = {
 // Widget Components
 function QuickStatsWidget({
   stats,
-  currency,
+  currencyCode,
 }: {
   stats: {
     total_prints: number;
@@ -131,7 +131,7 @@ function QuickStatsWidget({
     total_energy_cost: number;
     energy_data_warming_up?: boolean;
   } | undefined;
-  currency: string;
+  currencyCode: string;
 }) {
   const { t } = useTranslation();
 
@@ -142,7 +142,7 @@ function QuickStatsWidget({
     { icon: Package, color: 'text-bambu-green', label: t('stats.totalPrints'), value: `${stats?.total_prints || 0}` },
     { icon: Clock, color: 'text-blue-400', label: t('stats.printTime'), value: `${stats?.total_print_time_hours?.toFixed(1) ?? '0'}h` },
     { icon: Package, color: 'text-orange-400', label: t('stats.filamentUsed'), value: formatWeight(stats?.total_filament_grams || 0) },
-    { icon: DollarSign, color: 'text-green-400', label: t('stats.filamentCost'), value: `${currency} ${stats?.total_cost?.toFixed(2) ?? '0.00'}` },
+    { icon: DollarSign, color: 'text-green-400', label: t('stats.filamentCost'), value: formatCurrency(stats?.total_cost, currencyCode) },
     {
       icon: Zap,
       color: 'text-yellow-400',
@@ -155,7 +155,7 @@ function QuickStatsWidget({
       icon: DollarSign,
       color: 'text-yellow-500',
       label: t('stats.energyCost'),
-      value: `${currency} ${stats?.total_energy_cost?.toFixed(2) ?? '0.00'}`,
+      value: formatCurrency(stats?.total_energy_cost, currencyCode),
       warning: warmingUp,
       tooltip: warmingUpTooltip,
     },
@@ -712,12 +712,12 @@ function PrinterStatsWidget({
 
 function FilamentTrendsWidget({
   archives,
-  currency,
+  currencyCode,
   dateFrom,
   dateTo,
 }: {
   archives: Parameters<typeof FilamentTrends>[0]['archives'];
-  currency: string;
+  currencyCode: string;
   dateFrom?: string;
   dateTo?: string;
 }) {
@@ -725,7 +725,7 @@ function FilamentTrendsWidget({
   if (!archives || archives.length === 0) {
     return <p className="text-bambu-gray text-center py-4">{t('stats.noPrintData')}</p>;
   }
-  return <FilamentTrends archives={archives} currency={currency} dateFrom={dateFrom} dateTo={dateTo} />;
+  return <FilamentTrends archives={archives} currencyCode={currencyCode} dateFrom={dateFrom} dateTo={dateTo} />;
 }
 
 function FailureAnalysisWidget({ size = 1, dateFrom, dateTo, createdById }: {
@@ -819,7 +819,7 @@ function FailureAnalysisWidget({ size = 1, dateFrom, dateTo, createdById }: {
   );
 }
 
-function RecordsWidget({ archives, currency }: { archives: ArchiveSlim[]; currency: string }) {
+function RecordsWidget({ archives, currencyCode }: { archives: ArchiveSlim[]; currencyCode: string }) {
   const { t } = useTranslation();
 
   const records = useMemo(() => {
@@ -866,7 +866,7 @@ function RecordsWidget({ archives, currency }: { archives: ArchiveSlim[]; curren
     if (costliest.archive) {
       result.push({
         icon: DollarSign, iconColor: 'text-green-400', label: t('stats.mostExpensivePrint'),
-        value: `${currency}${costliest.value.toFixed(2)}`,
+        value: formatCurrency(costliest.value, currencyCode),
         detail: costliest.archive.print_name || null,
       });
     }
@@ -916,7 +916,7 @@ function RecordsWidget({ archives, currency }: { archives: ArchiveSlim[]; curren
     }
 
     return result;
-  }, [archives, currency, t]);
+  }, [archives, currencyCode, t]);
 
   if (records.length === 0) {
     return <p className="text-bambu-gray text-center py-4">{t('stats.noArchiveData')}</p>;
@@ -1077,7 +1077,7 @@ export function StatsPage() {
 
   const isRefetching = (isStatsFetching || isArchivesFetching) && !isLoading;
 
-  const currency = getCurrencySymbol(settings?.currency || 'USD');
+  const currencyCode = settings?.currency || 'USD';
   const printerMap = new Map(printers?.map((p) => [String(p.id), p.name]) || []);
   const printDates = useMemo(() => archives?.map((a) => a.created_at) || [], [archives]);
 
@@ -1096,7 +1096,7 @@ export function StatsPage() {
     {
       id: 'quick-stats',
       title: t('stats.quickStats'),
-      component: <QuickStatsWidget stats={stats} currency={currency} />,
+      component: <QuickStatsWidget stats={stats} currencyCode={currencyCode} />,
       defaultSize: 2,
     },
     {
@@ -1126,7 +1126,7 @@ export function StatsPage() {
     {
       id: 'records',
       title: t('stats.records'),
-      component: <RecordsWidget archives={archives || []} currency={currency} />,
+      component: <RecordsWidget archives={archives || []} currencyCode={currencyCode} />,
       defaultSize: 1,
     },
     {
@@ -1138,7 +1138,7 @@ export function StatsPage() {
     {
       id: 'filament-trends',
       title: t('stats.filamentTrends'),
-      component: <FilamentTrendsWidget archives={archives || []} currency={currency} dateFrom={effectiveDateRange.dateFrom} dateTo={effectiveDateRange.dateTo} />,
+      component: <FilamentTrendsWidget archives={archives || []} currencyCode={currencyCode} dateFrom={effectiveDateRange.dateFrom} dateTo={effectiveDateRange.dateTo} />,
       defaultSize: 4,
     },
   ];

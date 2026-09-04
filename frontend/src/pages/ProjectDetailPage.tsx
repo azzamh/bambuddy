@@ -48,7 +48,7 @@ import { PrintModal } from '../components/PrintModal';
 
 // Project edit modal (reused from ProjectsPage)
 import { ProjectModal } from './ProjectsPage';
-import { getCurrencySymbol } from '../utils/currency';
+import { formatCurrency, getCurrencySymbol } from '../utils/currency';
 
 // Returns true for sliced (printable) files: .gcode and .gcode.3mf
 function isSlicedFilename(filename: string): boolean {
@@ -271,7 +271,8 @@ export function ProjectDetailPage() {
     return map;
   }, [allProjectFiles]);
 
-  const currency = getCurrencySymbol(settings?.currency || 'USD');
+  const currencyCode = settings?.currency || 'USD';
+  const currency = getCurrencySymbol(currencyCode);
   const timeFormat: TimeFormat = settings?.time_format || 'system';
 
   const updateMutation = useMutation({
@@ -655,7 +656,7 @@ export function ProjectDetailPage() {
               <div>
                 <p className="text-xs text-bambu-gray uppercase">{t('projectDetail.cost.filamentCost')}</p>
                 <p className="text-lg font-semibold text-white">
-                  {currency}{stats.estimated_cost.toFixed(2)}
+                  {formatCurrency(stats.estimated_cost, currencyCode)}
                 </p>
               </div>
               {stats.total_energy_kwh > 0 && (
@@ -665,7 +666,7 @@ export function ProjectDetailPage() {
                     {stats.total_energy_kwh.toFixed(3)} kWh
                     {stats.total_energy_cost > 0 && (
                       <span className="text-sm text-bambu-gray ml-1">
-                        ({currency}{stats.total_energy_cost.toFixed(2)})
+                        ({formatCurrency(stats.total_energy_cost, currencyCode)})
                       </span>
                     )}
                   </p>
@@ -678,7 +679,7 @@ export function ProjectDetailPage() {
                   <div>
                     <p className="text-xs text-bambu-gray uppercase">{t('projectDetail.cost.totalCost')}</p>
                     <p className="text-lg font-semibold text-bambu-green">
-                      {currency}{totalCost.toFixed(2)}
+                      {formatCurrency(totalCost, currencyCode)}
                     </p>
                     {stats.bom_cost > 0 && (
                       <p className="text-xs text-bambu-gray/70">{t('projectDetail.cost.includesBom')}</p>
@@ -693,10 +694,10 @@ export function ProjectDetailPage() {
                   <div>
                     <p className="text-xs text-bambu-gray uppercase">{t('projectDetail.cost.budget')}</p>
                     <p className="text-sm text-bambu-gray">
-                      {t('projectDetail.cost.total')}: <span className="text-white font-semibold">{currency}{project.budget.toFixed(2)}</span>
+                      {t('projectDetail.cost.total')}: <span className="text-white font-semibold">{formatCurrency(project.budget, currencyCode)}</span>
                     </p>
                     <p className={`text-sm ${remaining >= 0 ? 'text-bambu-green' : 'text-red-400'}`}>
-                      {t('projectDetail.cost.remaining')}: <span className="font-semibold">{currency}{remaining.toFixed(2)}</span>
+                      {t('projectDetail.cost.remaining')}: <span className="font-semibold">{formatCurrency(remaining, currencyCode)}</span>
                     </p>
                   </div>
                 );
@@ -1194,7 +1195,7 @@ export function ProjectDetailPage() {
                             </p>
                             {item.unit_price !== null && (
                               <span className="text-xs text-bambu-green whitespace-nowrap">
-                                {currency}{(item.unit_price * item.quantity_needed).toFixed(2)}
+                                {formatCurrency(item.unit_price * item.quantity_needed, currencyCode)}
                               </span>
                             )}
                           </div>
@@ -1262,7 +1263,7 @@ export function ProjectDetailPage() {
                 <div className="pt-2 mt-2 border-t border-bambu-dark-tertiary flex justify-between text-sm">
                   <span className="text-bambu-gray">{t('projectDetail.bom.totalCost')}</span>
                   <span className="text-white font-medium">
-                    {currency}{stats.bom_cost.toFixed(2)}
+                    {formatCurrency(stats.bom_cost, currencyCode)}
                   </span>
                 </div>
               )}
