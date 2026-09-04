@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import { useQueryClient, useQueries, useQuery } from '@tanstack/react-query';
 import {
   Printer as PrinterIcon,
@@ -14,6 +14,7 @@ import {
   Users,
 } from 'lucide-react';
 import { api, type PrinterStatus } from '../../api/client';
+import { getLoadedFilamentTypes } from '../../utils/printer';
 import { FilamentSlotCircle } from '../FilamentSlotCircle';
 import { formatDuration } from '../../utils/date';
 import { getColorName } from '../../utils/colors';
@@ -353,6 +354,49 @@ export function PrinterSelector({
     };
   };
 
+  // Filament types this plate needs, uppercased for comparison
+  const requiredFilamentTypes = useMemo(() => {
+    const types = new Set<string>();
+    for (const req of filamentReqs?.filaments ?? []) {
+      if (req.type) types.add(req.type.toUpperCase());
+    }
+    return types;
+  }, [filamentReqs]);
+
+  /**
+   * Which required types this printer has no spool for.
+   *
+   * Status is read from the cache the WebSocket already keeps warm, so this
+   * costs no extra request. A printer whose status has not arrived yet is
+   * treated as capable — hiding printers on missing data would be worse than
+   * showing one that turns out to be unsuitable.
+   */
+  const getMissingFilamentTypes = useCallback((printerId: number): string[] => {
+    if (requiredFilamentTypes.size === 0) return [];
+    const status = printerStatusMap.get(printerId);
+    if (!status || !status.connected) return [];
+    const loaded = getLoadedFilamentTypes(status.ams, status.vt_tray);
+    return [...requiredFilamentTypes].filter((type) => !loaded.has(type));
+  }, [requiredFilamentTypes, printerStatusMap]);
+
+  /**
+   * Whether to actually enforce the filament requirement.
+   *
+   * Only when at least one printer can satisfy it. If no printer has the
+   * material loaded — or no status reports AMS contents at all — blocking
+   * every row would leave the user unable to schedule anything, which is
+   * worse than letting them pick and load the spool before the job runs.
+   */
+  const enforceFilamentFilter = useMemo(
+    () => activePrinters.some((p) => getMissingFilamentTypes(p.id).length === 0),
+    [activePrinters, getMissingFilamentTypes],
+  );
+
+  const isFilamentBlocked = useCallback(
+    (printerId: number) => enforceFilamentFilter && getMissingFilamentTypes(printerId).length > 0,
+    [enforceFilamentFilter, getMissingFilamentTypes],
+  );
+
   const isPrinterBusy = (printerId: number): boolean => {
     const status = printerStatusMap.get(printerId);
     if (!status) return false; // Unknown state — don't block
@@ -375,19 +419,44 @@ export function PrinterSelector({
     return state;
   };
 
-  // Filter by sliced model (only in printer mode, when slicedForModel is set)
+  // Filter by sliced model, then by whether the plate's filaments are loaded
+  // (only in printer mode). "Show all" lifts both filters at once.
   const displayPrinters = useMemo(() => {
-    if (assignmentMode !== 'printer' || !slicedForModel || showAllPrinters) {
+    if (assignmentMode !== 'printer' || showAllPrinters) {
       return activePrinters;
     }
-    // Filter to only show printers matching the sliced model
-    const matching = activePrinters.filter((p) => p.model === slicedForModel);
-    // If no matching printers, show all
-    return matching.length > 0 ? matching : activePrinters;
-  }, [activePrinters, assignmentMode, slicedForModel, showAllPrinters]);
 
-  // Check if there are hidden printers due to model filtering
+    let candidates = activePrinters;
+    if (slicedForModel) {
+      const matchingModel = candidates.filter((p) => p.model === slicedForModel);
+      // If nothing matches the sliced model, fall back to all printers rather
+      // than showing an empty list
+      if (matchingModel.length > 0) candidates = matchingModel;
+    }
+
+    if (requiredFilamentTypes.size > 0) {
+      const withFilament = candidates.filter((p) => getMissingFilamentTypes(p.id).length === 0);
+      // Same fallback: never hide the entire fleet just because no printer has
+      // the right spool loaded — the empty list would look like a bug
+      if (withFilament.length > 0) candidates = withFilament;
+    }
+
+    return candidates;
+  }, [activePrinters, assignmentMode, slicedForModel, showAllPrinters, requiredFilamentTypes, getMissingFilamentTypes]);
+
+  // Printers filtered out by the model / filament filters above
   const hiddenPrinterCount = activePrinters.length - displayPrinters.length;
+
+  // Spell out which filter removed them, so "show all" is not a mystery
+  const hiddenReason = useMemo(() => {
+    if (hiddenPrinterCount === 0) return '';
+    const hidden = activePrinters.filter((p) => !displayPrinters.includes(p));
+    const wrongModel = slicedForModel ? hidden.some((p) => p.model !== slicedForModel) : false;
+    const missingFilament = hidden.some((p) => getMissingFilamentTypes(p.id).length > 0);
+    if (wrongModel && missingFilament) return 'different model or filament not loaded';
+    if (missingFilament) return `${[...requiredFilamentTypes].join(', ')} not loaded`;
+    return 'different model';
+  }, [hiddenPrinterCount, activePrinters, displayPrinters, slicedForModel, getMissingFilamentTypes, requiredFilamentTypes]);
 
   // Get unique models from available printers (for model-based assignment)
   const uniqueModels = useMemo(() => {
@@ -437,6 +506,7 @@ export function PrinterSelector({
 
   const handlePrinterClick = (printerId: number) => {
     if (disableBusy && isPrinterBusy(printerId)) return;
+    if (isFilamentBlocked(printerId)) return;
 
     if (allowMultiple) {
       if (selectedPrinterIds.includes(printerId)) {
@@ -450,9 +520,9 @@ export function PrinterSelector({
   };
 
   const handleSelectAll = () => {
-    const selectable = disableBusy
-      ? displayPrinters.filter((p) => !isPrinterBusy(p.id))
-      : displayPrinters;
+    const selectable = displayPrinters
+      .filter((p) => !(disableBusy && isPrinterBusy(p.id)))
+      .filter((p) => !isFilamentBlocked(p.id));
     onMultiSelect(selectable.map((p) => p.id));
   };
 
@@ -619,7 +689,12 @@ export function PrinterSelector({
         const mappingResult = getPrinterMappingResult(printer.id);
         const hasOverride = mappingResult && !mappingResult.config.useDefault;
         const busy = isPrinterBusy(printer.id);
-        const disabled = disableBusy && busy;
+        const missingFilaments = getMissingFilamentTypes(printer.id);
+        // The plate needs filament this printer has no spool for. Visible under
+        // "show all" but not selectable — unless no printer at all has it, in
+        // which case the missing material is flagged as a warning instead.
+        const filamentBlocked = isFilamentBlocked(printer.id);
+        const disabled = (disableBusy && busy) || filamentBlocked;
         const stateLabel = getPrinterStateLabel(printer.id);
         const swatches = getSlotSwatches(printerStatusMap.get(printer.id));
         const readiness = getPrinterReadiness(printer.id);
@@ -704,6 +779,18 @@ export function PrinterSelector({
                   </div>
                 )}
               </div>
+              {missingFilaments.length > 0 && (
+                <span
+                  className="text-xs px-2 py-0.5 rounded-full bg-orange-500/20 text-orange-400 whitespace-nowrap"
+                  title={
+                    filamentBlocked
+                      ? `This plate needs ${missingFilaments.join(', ')} — load it on this printer to select it`
+                      : `This plate needs ${missingFilaments.join(', ')}, which is not loaded on any printer — load it before the job runs`
+                  }
+                >
+                  No {missingFilaments.join(', ')}
+                </span>
+              )}
               {stateLabel && (
                 <span className={`text-xs px-2 py-0.5 rounded-full ${
                   busy
@@ -800,7 +887,7 @@ export function PrinterSelector({
           className="text-xs text-bambu-gray hover:text-white transition-colors mt-2 flex items-center gap-1"
         >
           <AlertTriangle className="w-3 h-3 text-yellow-400" />
-          {hiddenPrinterCount} other printer{hiddenPrinterCount > 1 ? 's' : ''} hidden (different model) —
+          {hiddenPrinterCount} other printer{hiddenPrinterCount > 1 ? 's' : ''} hidden ({hiddenReason}) —
           <span className="underline">show all</span>
         </button>
       )}

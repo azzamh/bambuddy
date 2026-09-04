@@ -8,7 +8,8 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { getPrinterImage } from '../../utils/printer';
+import { getPrinterImage, getLoadedFilamentTypes, getLoadedFilamentPairs } from '../../utils/printer';
+import type { AMSTray, AMSUnit } from '../../api/client';
 
 describe('getPrinterImage', () => {
   describe('X2D (#988)', () => {
@@ -71,5 +72,58 @@ describe('getPrinterImage', () => {
         '/img/printers/default.png',
       );
     });
+  });
+});
+
+describe('getLoadedFilamentTypes', () => {
+  const tray = (type: string | null, color = 'FF0000') =>
+    ({ id: 0, tray_type: type, tray_color: color }) as unknown as AMSTray;
+
+  it('collects types from every AMS unit and tray', () => {
+    const ams = [
+      { id: 0, tray: [tray('PLA'), tray('PETG')] },
+      { id: 1, tray: [tray('ABS')] },
+    ] as unknown as AMSUnit[];
+
+    expect(getLoadedFilamentTypes(ams, [])).toEqual(new Set(['PLA', 'PETG', 'ABS']));
+  });
+
+  it('includes the external spool, which can feed a print just as well', () => {
+    expect(getLoadedFilamentTypes([], [tray('PETG')])).toEqual(new Set(['PETG']));
+  });
+
+  it('uppercases so comparison is case insensitive', () => {
+    const ams = [{ id: 0, tray: [tray('petg')] }] as unknown as AMSUnit[];
+    expect(getLoadedFilamentTypes(ams, [])).toEqual(new Set(['PETG']));
+  });
+
+  it('skips empty slots', () => {
+    const ams = [{ id: 0, tray: [tray('PLA'), tray(null)] }] as unknown as AMSUnit[];
+    expect(getLoadedFilamentTypes(ams, [])).toEqual(new Set(['PLA']));
+  });
+
+  it('returns an empty set when nothing is loaded', () => {
+    expect(getLoadedFilamentTypes(null, null)).toEqual(new Set());
+    expect(getLoadedFilamentTypes(undefined, undefined)).toEqual(new Set());
+  });
+});
+
+describe('getLoadedFilamentPairs', () => {
+  const tray = (type: string | null, color: string | null) =>
+    ({ id: 0, tray_type: type, tray_color: color }) as unknown as AMSTray;
+
+  it('formats type and colour the way the backend matches them', () => {
+    const ams = [{ id: 0, tray: [tray('PETG', '#FFFFFF')] }] as unknown as AMSUnit[];
+    expect(getLoadedFilamentPairs(ams, [])).toEqual(new Set(['PETG:ffffff']));
+  });
+
+  it('drops the alpha channel from 8-digit colours', () => {
+    const ams = [{ id: 0, tray: [tray('PLA', 'FF0000FF')] }] as unknown as AMSUnit[];
+    expect(getLoadedFilamentPairs(ams, [])).toEqual(new Set(['PLA:ff0000']));
+  });
+
+  it('ignores trays missing a type or a colour', () => {
+    const ams = [{ id: 0, tray: [tray('PLA', null), tray(null, '#FFFFFF')] }] as unknown as AMSUnit[];
+    expect(getLoadedFilamentPairs(ams, [])).toEqual(new Set());
   });
 });

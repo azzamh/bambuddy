@@ -88,7 +88,7 @@ import { FileUploadModal } from '../components/FileUploadModal';
 import { PrintModal } from '../components/PrintModal';
 import { PrinterInfoModal } from '../components/PrinterInfoModal';
 import { getGlobalTrayId, getFillBarColor, getSpoolmanFillLevel, getFallbackSpoolTag, isBambuLabSpool } from '../utils/amsHelpers';
-import { getPrinterImage, getWifiStrength, filterCompatibleQueueItems } from '../utils/printer';
+import { getPrinterImage, getWifiStrength, filterCompatibleQueueItems, getLoadedFilamentTypes, getLoadedFilamentPairs } from '../utils/printer';
 import { FilamentSlotCircle } from '../components/FilamentSlotCircle';
 import { Collapsible } from '../components/Collapsible';
 import { getColorName, parseFilamentColor, isLightColor } from '../utils/colors';
@@ -1584,44 +1584,15 @@ function PrinterCard({
     return Array.from(ids);
   }, [status?.ams, status?.vt_tray, status?.nozzle_rack]);
 
-  // Collect loaded filament types for queue widget filtering
-  const loadedFilamentTypes = useMemo(() => {
-    const types = new Set<string>();
-    if (status?.ams) {
-      for (const ams of status.ams) {
-        for (const tray of ams.tray || []) {
-          if (tray.tray_type) types.add(tray.tray_type.toUpperCase());
-        }
-      }
-    }
-    for (const vt of status?.vt_tray ?? []) {
-      if (vt.tray_type) types.add(vt.tray_type.toUpperCase());
-    }
-    return types;
-  }, [status?.ams, status?.vt_tray]);
-
-  // Collect loaded filament type+color pairs for queue widget override matching
-  // Format: "TYPE:rrggbb" (e.g., "PETG:ffffff") — mirrors backend _count_override_color_matches()
-  const loadedFilaments = useMemo(() => {
-    const filaments = new Set<string>();
-    if (status?.ams) {
-      for (const ams of status.ams) {
-        for (const tray of ams.tray || []) {
-          if (tray.tray_type && tray.tray_color) {
-            const color = tray.tray_color.replace('#', '').toLowerCase().slice(0, 6);
-            filaments.add(`${tray.tray_type.toUpperCase()}:${color}`);
-          }
-        }
-      }
-    }
-    for (const vt of status?.vt_tray ?? []) {
-      if (vt.tray_type && vt.tray_color) {
-        const color = vt.tray_color.replace('#', '').toLowerCase().slice(0, 6);
-        filaments.add(`${vt.tray_type.toUpperCase()}:${color}`);
-      }
-    }
-    return filaments;
-  }, [status?.ams, status?.vt_tray]);
+  // Loaded filament types / type+colour pairs, for queue widget filtering
+  const loadedFilamentTypes = useMemo(
+    () => getLoadedFilamentTypes(status?.ams, status?.vt_tray),
+    [status?.ams, status?.vt_tray],
+  );
+  const loadedFilaments = useMemo(
+    () => getLoadedFilamentPairs(status?.ams, status?.vt_tray),
+    [status?.ams, status?.vt_tray],
+  );
 
   // Fetch cloud filament info for tooltips (name includes color, also has K value)
   const { data: filamentInfo } = useQuery({

@@ -25,7 +25,7 @@ export function getWifiStrength(rssi: number): { labelKey: string; color: string
   return { labelKey: 'printers.wifiSignal.veryWeak', color: 'text-red-400', bars: 1 };
 }
 
-import type { PrintQueueItem } from '../api/client';
+import type { AMSTray, AMSUnit, PrintQueueItem } from '../api/client';
 
 /**
  * Filters queue items based on printer compatibility (filament types and colors).
@@ -78,4 +78,49 @@ export function filterCompatibleQueueItems(
 
     return true;
   });
+}
+
+
+/**
+ * Filament types currently loaded on a printer, uppercased for comparison.
+ *
+ * Covers both AMS trays and any external spool, since either can feed a print.
+ * An empty set means nothing is loaded — callers must treat that as "cannot
+ * satisfy any requirement", not as "no constraint".
+ */
+export function getLoadedFilamentTypes(
+  ams: AMSUnit[] | null | undefined,
+  vtTray: AMSTray[] | null | undefined,
+): Set<string> {
+  const types = new Set<string>();
+  for (const unit of ams ?? []) {
+    for (const tray of unit.tray ?? []) {
+      if (tray.tray_type) types.add(tray.tray_type.toUpperCase());
+    }
+  }
+  for (const tray of vtTray ?? []) {
+    if (tray.tray_type) types.add(tray.tray_type.toUpperCase());
+  }
+  return types;
+}
+
+/**
+ * Type+colour pairs loaded on a printer, formatted "TYPE:rrggbb".
+ * Mirrors the backend's override colour matching.
+ */
+export function getLoadedFilamentPairs(
+  ams: AMSUnit[] | null | undefined,
+  vtTray: AMSTray[] | null | undefined,
+): Set<string> {
+  const pairs = new Set<string>();
+  const add = (tray: AMSTray) => {
+    if (!tray.tray_type || !tray.tray_color) return;
+    const color = tray.tray_color.replace('#', '').toLowerCase().slice(0, 6);
+    pairs.add(`${tray.tray_type.toUpperCase()}:${color}`);
+  };
+  for (const unit of ams ?? []) {
+    for (const tray of unit.tray ?? []) add(tray);
+  }
+  for (const tray of vtTray ?? []) add(tray);
+  return pairs;
 }
