@@ -40,7 +40,7 @@ import { defaultNavItems, getDefaultView, setDefaultView } from '../components/L
 import { availableLanguages } from '../i18n';
 import { useToast } from '../contexts/ToastContext';
 import { useTheme, type ThemeStyle, type DarkBackground, type LightBackground, type ThemeAccent } from '../contexts/ThemeContext';
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { Palette } from 'lucide-react';
 import { registerSettingsSearch, getSettingsSearchEntries } from '../lib/settingsSearch';
 import type { UsersSubTab } from '../lib/settingsSearch';
@@ -930,6 +930,7 @@ export function SettingsPage() {
       settings.currency !== localSettings.currency ||
       settings.energy_cost_per_kwh !== localSettings.energy_cost_per_kwh ||
       settings.energy_tracking_mode !== localSettings.energy_tracking_mode ||
+      JSON.stringify(settings.printer_power_watts ?? {}) !== JSON.stringify(localSettings.printer_power_watts ?? {}) ||
       settings.check_updates !== localSettings.check_updates ||
       (settings.check_printer_firmware ?? true) !== (localSettings.check_printer_firmware ?? true) ||
       (settings.include_beta_updates ?? false) !== (localSettings.include_beta_updates ?? false) ||
@@ -1014,6 +1015,7 @@ export function SettingsPage() {
         currency: localSettings.currency,
         energy_cost_per_kwh: localSettings.energy_cost_per_kwh,
         energy_tracking_mode: localSettings.energy_tracking_mode,
+        printer_power_watts: localSettings.printer_power_watts ?? {},
         check_updates: localSettings.check_updates,
         check_printer_firmware: localSettings.check_printer_firmware,
         include_beta_updates: localSettings.include_beta_updates,
@@ -1079,6 +1081,24 @@ export function SettingsPage() {
     };
   }, [localSettings, settings, updateMutation, authEnabled, hasPermission, showToast, t]);
 
+  // Distinct printer models actually in the fleet — no point asking for the
+  // wattage of models the user does not own.
+  const fleetModels = useMemo<string[]>(() => {
+    const models = (printers ?? [])
+      .map((p) => p.model)
+      .filter((m): m is string => Boolean(m && m.trim()));
+    return [...new Set(models)].sort();
+  }, [printers]);
+
+  // Built-in estimate for a model, shown as the input's placeholder
+  const defaultPowerFor = useCallback((model: string) => {
+    const defaults = localSettings?.printer_power_watts_defaults ?? {};
+    const normalize = (name: string) => name.replace(/[\s-]/g, '').toUpperCase();
+    const target = normalize(model);
+    const match = Object.entries(defaults).find(([name]) => normalize(name) === target);
+    return match ? match[1] : localSettings?.printer_power_watts_fallback ?? 120;
+  }, [localSettings?.printer_power_watts_defaults, localSettings?.printer_power_watts_fallback]);
+
   const updateSetting = useCallback(<K extends keyof AppSettings>(key: K, value: AppSettings[K]) => {
     // Gate at the point of user interaction (not in the debounced-save effect —
     // that runs on every render and would fire the toast repeatedly). One toast
@@ -1089,6 +1109,18 @@ export function SettingsPage() {
     }
     setLocalSettings(prev => prev ? { ...prev, [key]: value } : null);
   }, [authEnabled, hasPermission, showToast, t]);
+
+  // Blank (or nonsense) clears the override so the built-in estimate applies again
+  const updatePowerOverride = useCallback((model: string, raw: string) => {
+    const next = { ...(localSettings?.printer_power_watts ?? {}) };
+    const value = parseFloat(raw);
+    if (!raw.trim() || !Number.isFinite(value) || value <= 0) {
+      delete next[model];
+    } else {
+      next[model] = value;
+    }
+    updateSetting('printer_power_watts', next);
+  }, [localSettings?.printer_power_watts, updateSetting]);
 
   const handleTestExternalCamera = async (printerId: number, url: string, cameraType: string) => {
     if (!url) {
@@ -2060,18 +2092,60 @@ export function SettingsPage() {
                 </label>
                 <select
                   value={localSettings.energy_tracking_mode || 'total'}
-                  onChange={(e) => updateSetting('energy_tracking_mode', e.target.value as 'print' | 'total')}
+                  onChange={(e) => updateSetting('energy_tracking_mode', e.target.value as 'print' | 'total' | 'estimated')}
                   className="w-full px-3 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
                 >
                   <option value="print">{t('settings.printsOnly')}</option>
                   <option value="total">{t('settings.totalConsumption')}</option>
+                  <option value="estimated">{t('settings.estimatedFromModel')}</option>
                 </select>
                 <p className="text-xs text-bambu-gray mt-1">
                   {localSettings.energy_tracking_mode === 'print'
                     ? t('settings.energyModePrintDescription')
-                    : t('settings.energyModeTotalDescription')}
+                    : localSettings.energy_tracking_mode === 'estimated'
+                      ? t('settings.energyModeEstimatedDescription')
+                      : t('settings.energyModeTotalDescription')}
                 </p>
               </div>
+
+              {/* Per-model average draw, only relevant while estimating */}
+              {localSettings.energy_tracking_mode === 'estimated' && (
+                <div>
+                  <label className="block text-sm text-bambu-gray mb-1">
+                    {t('settings.printerPower')}
+                  </label>
+                  <p className="text-xs text-bambu-gray mb-2">
+                    {t('settings.printerPowerHelp')}
+                  </p>
+                  {fleetModels.length === 0 ? (
+                    <p className="text-xs text-bambu-gray">{t('settings.printerPowerNoPrinters')}</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {fleetModels.map((model) => (
+                        <div key={model} className="flex items-center gap-3">
+                          <span className="flex-1 min-w-0 text-sm text-white truncate" title={model}>
+                            {model}
+                          </span>
+                          <div className="relative w-28 flex-shrink-0">
+                            <input
+                              type="number"
+                              min="0"
+                              step="1"
+                              value={localSettings.printer_power_watts?.[model] ?? ''}
+                              placeholder={String(defaultPowerFor(model))}
+                              onChange={(e) => updatePowerOverride(model, e.target.value)}
+                              className="w-full pl-3 pr-8 py-2 bg-bambu-dark border border-bambu-dark-tertiary rounded-lg text-white focus:border-bambu-green focus:outline-none"
+                            />
+                            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-bambu-gray text-sm pointer-events-none">
+                              W
+                            </span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
             </CardContent>
           </Card>
 

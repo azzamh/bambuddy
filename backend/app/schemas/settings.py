@@ -2,6 +2,8 @@ import json
 
 from pydantic import BaseModel, Field, field_validator
 
+from backend.app.utils.printer_power import DEFAULT_MODEL_POWER_WATTS, FALLBACK_POWER_WATTS
+
 
 class AppSettings(BaseModel):
     """Application settings schema."""
@@ -16,7 +18,23 @@ class AppSettings(BaseModel):
     energy_cost_per_kwh: float = Field(default=0.15, description="Electricity cost per kWh for energy tracking")
     energy_tracking_mode: str = Field(
         default="total",
-        description="Energy display mode on stats: 'print' shows sum of per-print energy, 'total' shows lifetime plug consumption",
+        description=(
+            "Energy display mode on stats: 'print' sums per-print energy, 'total' shows lifetime "
+            "plug consumption, 'estimated' uses measured energy where a plug recorded it and "
+            "falls back to printer model x print duration everywhere else"
+        ),
+    )
+    printer_power_watts: dict[str, float] = Field(
+        default_factory=dict,
+        description="Average watts per printer model, overriding the built-in estimates. Keyed by normalized model name.",
+    )
+    printer_power_watts_defaults: dict[str, float] = Field(
+        default_factory=lambda: dict(DEFAULT_MODEL_POWER_WATTS),
+        description="Read-only: built-in average watts per model, shown as the placeholder for each override",
+    )
+    printer_power_watts_fallback: float = Field(
+        default=FALLBACK_POWER_WATTS,
+        description="Read-only: watts assumed for a printer model that is not in the built-in table",
     )
 
     # Spoolman integration
@@ -331,6 +349,7 @@ class AppSettingsUpdate(BaseModel):
     currency: str | None = None
     energy_cost_per_kwh: float | None = None
     energy_tracking_mode: str | None = None
+    printer_power_watts: dict[str, float] | None = None
     spoolman_enabled: bool | None = None
     spoolman_url: str | None = None
     spoolman_sync_mode: str | None = None

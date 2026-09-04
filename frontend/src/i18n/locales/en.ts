@@ -2121,6 +2121,11 @@ export default {
     energyDisplayMode: 'Energy display mode',
     energyModePrintDescription: 'Dashboard shows sum of energy used during prints',
     energyModeTotalDescription: 'Dashboard shows lifetime energy from smart plugs',
+    estimatedFromModel: 'Estimated (printer model × time)',
+    energyModeEstimatedDescription: 'Uses smart plug readings where they exist, and estimates the rest from printer model × print duration',
+    printerPower: 'Average power per printer model',
+    printerPowerHelp: 'Average draw across a whole print, not peak. Leave blank to use the built-in estimate.',
+    printerPowerNoPrinters: 'Add a printer first to set its power.',
     // File Manager
     fileManager: 'File Manager',
     createArchiveEntry: 'Create Archive Entry When Printing',

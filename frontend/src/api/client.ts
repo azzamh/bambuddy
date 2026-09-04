@@ -896,7 +896,13 @@ export interface AppSettings {
   default_filament_cost: number;
   currency: string;
   energy_cost_per_kwh: number;
-  energy_tracking_mode: 'print' | 'total';
+  energy_tracking_mode: 'print' | 'total' | 'estimated';
+  /** Per-model average watts, overriding the built-in estimates */
+  printer_power_watts?: Record<string, number>;
+  /** Read-only: built-in average watts per model, used as each field's placeholder */
+  printer_power_watts_defaults?: Record<string, number>;
+  /** Read-only: watts assumed for a model missing from the built-in table */
+  printer_power_watts_fallback?: number;
   check_updates: boolean;
   check_printer_firmware: boolean;
   include_beta_updates: boolean;

@@ -2117,6 +2117,11 @@ export default {
     energyDisplayMode: 'エネルギー表示モード',
     energyModePrintDescription: 'ダッシュボードに印刷中の消費エネルギーの合計を表示',
     energyModeTotalDescription: 'ダッシュボードにスマートプラグの累計エネルギーを表示',
+    estimatedFromModel: '推定（プリンター機種 × 時間）',
+    energyModeEstimatedDescription: 'スマートプラグの計測値がある場合はそれを使い、それ以外はプリンター機種 × 印刷時間から推定します',
+    printerPower: 'プリンター機種ごとの平均消費電力',
+    printerPowerHelp: 'ピークではなく印刷全体の平均値です。空欄にすると内蔵の推定値を使います。',
+    printerPowerNoPrinters: '先にプリンターを追加すると電力を設定できます。',
     // File Manager
     fileManager: 'ファイルマネージャー',
     createArchiveEntry: '印刷時にアーカイブエントリを作成',

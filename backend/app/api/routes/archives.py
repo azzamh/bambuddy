@@ -820,6 +820,12 @@ async def get_archive_stats(
             dt_to=(datetime.combine(date_to, time.max, tzinfo=timezone.utc) if date_to else None),
         )
         total_energy_cost = total_energy_kwh * energy_cost_per_kwh
+    elif energy_tracking_mode == "estimated":
+        # Estimated mode: use what a smart plug actually measured when there is
+        # such a reading, and fall back to printer model x print duration for
+        # every other print. Fleets with no plugs (or plugs on only a few
+        # printers) get a usable number instead of a flat zero.
+        total_energy_kwh, total_energy_cost = await _sum_estimated_energy(db, base_conditions, energy_cost_per_kwh)
     else:
         # Per-print mode: sum the per-print energy column directly.
         energy_kwh_result = await db.execute(select(func.sum(PrintArchive.energy_kwh)).where(*base_conditions))
@@ -843,6 +849,57 @@ async def get_archive_stats(
         total_energy_cost=round(total_energy_cost, 3),
         energy_data_warming_up=energy_data_warming_up,
     )
+
+
+async def _sum_estimated_energy(
+    db: AsyncSession,
+    base_conditions: list,
+    energy_cost_per_kwh: float,
+) -> tuple[float, float]:
+    """Total kWh and cost with measured readings preferred over estimates.
+
+    A print counts as measured when a smart plug recorded energy for it; those
+    keep the cost that was stored at the time, since it was computed with the
+    tariff in force then. Everything else is estimated from the printer's model
+    and how long the print ran, priced at the current tariff.
+    """
+    from backend.app.api.routes.settings import get_setting
+    from backend.app.models.printer import Printer
+    from backend.app.utils.printer_power import estimate_kwh
+
+    raw_overrides = await get_setting(db, "printer_power_watts")
+    overrides: dict[str, float] = {}
+    if raw_overrides:
+        try:
+            parsed = json.loads(raw_overrides)
+            if isinstance(parsed, dict):
+                overrides = parsed
+        except (TypeError, ValueError):
+            logger.warning("Ignoring malformed printer_power_watts setting: %r", raw_overrides)
+
+    result = await db.execute(
+        select(
+            PrintArchive.energy_kwh,
+            PrintArchive.energy_cost,
+            PrintArchive.print_time_seconds,
+            Printer.model,
+        )
+        .outerjoin(Printer, PrintArchive.printer_id == Printer.id)
+        .where(*base_conditions)
+    )
+
+    total_kwh = 0.0
+    total_cost = 0.0
+    for measured_kwh, measured_cost, seconds, model in result.all():
+        if measured_kwh:
+            total_kwh += measured_kwh
+            total_cost += measured_cost if measured_cost is not None else measured_kwh * energy_cost_per_kwh
+        else:
+            estimated = estimate_kwh(model, seconds, overrides)
+            total_kwh += estimated
+            total_cost += estimated * energy_cost_per_kwh
+
+    return total_kwh, total_cost
 
 
 async def _sum_live_plug_totals(db: AsyncSession) -> float:

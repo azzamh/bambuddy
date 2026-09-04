@@ -2118,6 +2118,11 @@ export default {
     energyDisplayMode: 'Energieanzeige-Modus',
     energyModePrintDescription: 'Dashboard zeigt Summe der während Drucken verbrauchten Energie',
     energyModeTotalDescription: 'Dashboard zeigt Gesamtenergie der Smart Plugs',
+    estimatedFromModel: 'Geschätzt (Druckermodell × Zeit)',
+    energyModeEstimatedDescription: 'Nutzt Messwerte smarter Steckdosen, wo vorhanden, und schätzt den Rest aus Druckermodell × Druckdauer',
+    printerPower: 'Durchschnittsleistung pro Druckermodell',
+    printerPowerHelp: 'Durchschnitt über den ganzen Druck, nicht Spitzenwert. Leer lassen für den eingebauten Schätzwert.',
+    printerPowerNoPrinters: 'Füge zuerst einen Drucker hinzu, um dessen Leistung zu setzen.',
     // File Manager
     fileManager: 'Dateimanager',
     createArchiveEntry: 'Archiveintrag beim Drucken erstellen',

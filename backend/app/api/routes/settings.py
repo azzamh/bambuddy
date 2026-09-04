@@ -1,4 +1,5 @@
 import io
+import json
 import logging
 import os
 import zipfile
@@ -133,6 +134,15 @@ async def _build_settings_response(db: AsyncSession, is_api_key: bool = False) -
             "forecast_global_lead_time_days",
         ]:
             settings_dict[setting.key] = int(setting.value)
+        elif setting.key == "printer_power_watts":
+            # Stored as a JSON object (model -> watts); a corrupt value must not
+            # take the whole settings endpoint down.
+            try:
+                parsed = json.loads(setting.value) if setting.value else {}
+            except (TypeError, ValueError):
+                logger.warning("Ignoring malformed printer_power_watts setting: %r", setting.value)
+                parsed = {}
+            settings_dict[setting.key] = parsed if isinstance(parsed, dict) else {}
         elif setting.key == "default_printer_id":
             settings_dict[setting.key] = int(setting.value) if setting.value and setting.value != "None" else None
         else:
@@ -190,6 +200,10 @@ async def update_settings(
             str_value = "true" if value else "false"
         elif value is None:
             str_value = "None"
+        elif isinstance(value, dict):
+            # str() on a dict yields a Python repr with single quotes, which is
+            # not valid JSON and would fail to parse on read.
+            str_value = json.dumps(value)
         else:
             str_value = str(value)
         await set_setting(db, key, str_value)
