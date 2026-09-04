@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { useQueryClient, useQueries } from '@tanstack/react-query';
+import { useQueryClient, useQueries, useQuery } from '@tanstack/react-query';
 import {
   Printer as PrinterIcon,
   Loader2,
@@ -7,11 +7,15 @@ import {
   AlertTriangle,
   Check,
   Circle,
+  Clock,
+  Layers,
   RefreshCw,
   Wand2,
   Users,
 } from 'lucide-react';
 import { api, type PrinterStatus } from '../../api/client';
+import { FilamentSlotCircle } from '../FilamentSlotCircle';
+import { formatDuration } from '../../utils/date';
 import { getColorName } from '../../utils/colors';
 import {
   normalizeColorForCompare,
@@ -50,6 +54,68 @@ interface PrinterSelectorWithMappingProps extends PrinterSelectorProps {
 
 /** States where the printer is available to accept a new print */
 const AVAILABLE_STATES = new Set(['IDLE', 'FINISH', 'FAILED']);
+
+/** One filament slot as shown in the printer row's colour strip */
+interface SlotSwatch {
+  key: string;
+  color: string | null;
+  type: string | null;
+  isEmpty: boolean;
+  slotNumber: number;
+  isExternal: boolean;
+  label: string;
+}
+
+/** Tray colours arrive as "RRGGBB" or "#RRGGBBAA" — the circle wants bare RRGGBB. */
+function normalizeTrayColor(raw: string | null | undefined): string | null {
+  if (!raw) return null;
+  const hex = raw.replace('#', '').slice(0, 6);
+  return hex.length === 6 ? hex : null;
+}
+
+/**
+ * Flatten a printer's AMS units and external spools into one list of swatches.
+ * Reads only the status object that is already in the query cache, so this
+ * costs no extra requests.
+ */
+function getSlotSwatches(status: PrinterStatus | undefined): SlotSwatch[] {
+  if (!status?.connected) return [];
+  const swatches: SlotSwatch[] = [];
+
+  status.ams?.forEach((unit) => {
+    unit.tray?.forEach((tray) => {
+      const color = normalizeTrayColor(tray.tray_color);
+      // state 9 = empty slot; some firmwares just leave type and colour unset
+      const isEmpty = tray.state === 9 || (!tray.tray_type && !color);
+      swatches.push({
+        key: `ams-${unit.id}-${tray.id}`,
+        color,
+        type: tray.tray_type,
+        isEmpty,
+        slotNumber: swatches.length + 1,
+        isExternal: false,
+        label: isEmpty ? 'Empty' : `${tray.tray_type || 'Filament'}${tray.remain >= 0 ? ` · ${tray.remain}%` : ''}`,
+      });
+    });
+  });
+
+  status.vt_tray?.forEach((tray, idx) => {
+    const color = normalizeTrayColor(tray.tray_color);
+    const isEmpty = !tray.tray_type && !color;
+    if (isEmpty) return; // an unused external spool is noise, not information
+    swatches.push({
+      key: `vt-${tray.id ?? idx}`,
+      color,
+      type: tray.tray_type,
+      isEmpty: false,
+      slotNumber: idx + 1,
+      isExternal: true,
+      label: `External · ${tray.tray_type || 'Filament'}`,
+    });
+  });
+
+  return swatches;
+}
 
 /**
  * Inline AMS mapping editor for a single printer.
@@ -232,7 +298,9 @@ export function PrinterSelector({
     queries: activePrinters.map((printer) => ({
       queryKey: ['printerStatus', printer.id],
       queryFn: () => api.getPrinterStatus(printer.id),
-      staleTime: 5000,
+      // The WebSocket writes fresh status into this same key, so a short
+      // staleTime just means redundant refetches every time the modal opens.
+      staleTime: 30_000,
     })),
   });
 
@@ -247,6 +315,45 @@ export function PrinterSelector({
     });
     return map;
   }, [activePrinters, statusQueries]);
+
+  // Pending queue for the whole fleet. Same key and fetcher the app shell
+  // already polls, so React Query dedupes it — one shared request, not one
+  // per printer.
+  const { data: pendingQueue } = useQuery({
+    queryKey: ['queue', 'pending'],
+    queryFn: () => api.getQueue(undefined, 'pending'),
+    staleTime: 5000,
+  });
+
+  // printerId -> queued job count and their total estimated print time.
+  // Model-targeted jobs ("Any A1 Mini") have no printer_id and could land on
+  // any printer of that model, so counting them would inflate every row.
+  const queueLoadByPrinter = useMemo(() => {
+    const map = new Map<number, { count: number; minutes: number }>();
+    pendingQueue?.forEach((item) => {
+      if (item.printer_id == null) return;
+      const entry = map.get(item.printer_id) ?? { count: 0, minutes: 0 };
+      entry.count += 1;
+      entry.minutes += (item.print_time_seconds ?? 0) / 60;
+      map.set(item.printer_id, entry);
+    });
+    return map;
+  }, [pendingQueue]);
+
+  /** How long until this printer can start a new job: current print + its queue. */
+  const getPrinterReadiness = (printerId: number) => {
+    const status = printerStatusMap.get(printerId);
+    const load = queueLoadByPrinter.get(printerId);
+    // remaining_time is reported in minutes
+    const currentMinutes = status?.remaining_time && status.remaining_time > 0 ? status.remaining_time : 0;
+    const queuedMinutes = load?.minutes ?? 0;
+    return {
+      queueCount: load?.count ?? 0,
+      totalMinutes: Math.round(currentMinutes + queuedMinutes),
+      hasEstimate: currentMinutes > 0 || queuedMinutes > 0,
+      offline: status ? !status.connected : false,
+    };
+  };
 
   const isPrinterBusy = (printerId: number): boolean => {
     const status = printerStatusMap.get(printerId);
@@ -516,6 +623,8 @@ export function PrinterSelector({
         const busy = isPrinterBusy(printer.id);
         const disabled = disableBusy && busy;
         const stateLabel = getPrinterStateLabel(printer.id);
+        const swatches = getSlotSwatches(printerStatusMap.get(printer.id));
+        const readiness = getPrinterReadiness(printer.id);
 
         return (
           <div key={printer.id}>
@@ -551,6 +660,51 @@ export function PrinterSelector({
                 <p className="text-xs text-bambu-gray">
                   {printer.model || 'Unknown model'} • {printer.ip_address}
                 </p>
+                {/* Loaded filament colours (AMS slots + external spool) */}
+                {swatches.length > 0 && (
+                  <div className="flex items-center gap-1 mt-1.5">
+                    {swatches.map((slot) => (
+                      <span
+                        key={slot.key}
+                        title={slot.isExternal ? slot.label : `Slot ${slot.slotNumber} — ${slot.label}`}
+                        className={`inline-flex items-center ${slot.isExternal ? 'ml-1 pl-1.5 border-l border-bambu-dark-tertiary' : ''}`}
+                      >
+                        <FilamentSlotCircle
+                          trayColor={slot.color}
+                          trayType={slot.type}
+                          isEmpty={slot.isEmpty}
+                          slotNumber={slot.slotNumber}
+                        />
+                      </span>
+                    ))}
+                  </div>
+                )}
+                {/* Queue depth and when this printer frees up */}
+                {!readiness.offline && (readiness.queueCount > 0 || readiness.hasEstimate) && (
+                  <div className="flex items-center gap-3 mt-1 text-xs text-bambu-gray">
+                    {readiness.queueCount > 0 && (
+                      <span className="flex items-center gap-1" title="Jobs already queued for this printer">
+                        <Layers className="w-3 h-3" />
+                        {readiness.queueCount} queued
+                      </span>
+                    )}
+                    {readiness.hasEstimate && (
+                      <span
+                        className="flex items-center gap-1"
+                        title="Current print plus everything queued on this printer"
+                      >
+                        <Clock className="w-3 h-3" />
+                        Ready in {formatDuration(readiness.totalMinutes * 60)}
+                      </span>
+                    )}
+                  </div>
+                )}
+                {!readiness.offline && !busy && readiness.queueCount === 0 && !readiness.hasEstimate && (
+                  <div className="flex items-center gap-1 mt-1 text-xs text-bambu-green">
+                    <Clock className="w-3 h-3" />
+                    Ready now
+                  </div>
+                )}
               </div>
               {stateLabel && (
                 <span className={`text-xs px-2 py-0.5 rounded-full ${
