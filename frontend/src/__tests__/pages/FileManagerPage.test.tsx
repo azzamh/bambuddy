@@ -858,8 +858,10 @@ describe('FileManagerPage', () => {
       // User filter dropdown should be present
       expect(screen.getByPlaceholderText('Filter by user')).toBeInTheDocument();
 
-      // Username should be displayed in the column
-      expect(screen.getByText('testuser')).toBeInTheDocument();
+      // Username should be displayed. It renders twice: the desktop column and
+      // the mobile meta line under the filename (only one is visible at a time,
+      // but jsdom applies no responsive CSS).
+      expect(screen.getAllByText('testuser').length).toBeGreaterThan(0);
     });
   });
 
