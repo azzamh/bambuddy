@@ -11,6 +11,7 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { screen, waitFor, cleanup } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
 import { render } from '../utils';
 import { server } from '../mocks/server';
@@ -85,30 +86,34 @@ describe('FilamentMapping — FTS routing', () => {
         filamentReqs={mockFilamentReqs}
         manualMappings={{}}
         onManualMappingChange={() => {}}
-        currencySymbol="$"
+        currencyCode="USD"
         defaultCostPerKg={0}
         defaultExpanded
       />,
     );
 
+    // The slot picker is a custom listbox, so its entries only exist once open
+    const user = userEvent.setup();
+    await waitFor(() => expect(screen.getByRole('combobox')).toBeInTheDocument());
+    await user.click(screen.getByRole('combobox'));
+
     // Both PLA and PETG slots must appear in the dropdown despite ams_extruder_map
     // being empty and the requirement asking for nozzle 1. Without the FTS guard
-    // the dropdown would render only the "-- Select slot --" placeholder.
-    await waitFor(() => {
-      expect(screen.getByText(/Bambu PLA/)).toBeInTheDocument();
-    });
-    expect(screen.getByText(/Bambu PETG/)).toBeInTheDocument();
+    // the dropdown would offer only the "-- Select slot --" placeholder.
+    const options = screen.getAllByRole('option');
+    const petgOption = options.find((o) => /Bambu PETG/.test(o.textContent || ''));
+    const plaOption = options.find((o) => /Bambu PLA/.test(o.textContent || ''));
+    expect(petgOption).toBeDefined();
+    expect(plaOption).toBeDefined();
 
     // The slot currently fed into a track gets an [L]/[R] badge. AMS-0 slot 1
     // (global tray ID 1) is in fila_switch.in_slots[1], whose track terminates
     // at extruder 1 → the LEFT-nozzle short label appears in that option.
-    const petgOption = screen.getByText(/Bambu PETG/);
-    expect(petgOption.textContent).toMatch(/\[L\]/);
+    expect(petgOption?.textContent).toMatch(/\[L\]/);
 
     // AMS-0 slot 0 (global tray ID 0) is NOT currently fed into any track —
     // FTS routes it on demand, so no badge.
-    const plaOption = screen.getByText(/Bambu PLA/);
-    expect(plaOption.textContent).not.toMatch(/\[[LR]\]/);
+    expect(plaOption?.textContent).not.toMatch(/\[[LR]\]/);
   });
 
   it('still applies the per-nozzle filter when FTS is null', async () => {
@@ -131,18 +136,22 @@ describe('FilamentMapping — FTS routing', () => {
         filamentReqs={mockFilamentReqs}
         manualMappings={{}}
         onManualMappingChange={() => {}}
-        currencySymbol="$"
+        currencyCode="USD"
         defaultCostPerKg={0}
         defaultExpanded
       />,
     );
 
     // Required nozzle is 1 (LEFT) but AMS 0 is on extruder 0 (RIGHT) — neither
-    // slot should appear in the dropdown.
-    await waitFor(() => {
-      // Wait for component to render — the slot label should NOT be present
-      expect(screen.queryByText(/Bambu PLA/)).not.toBeInTheDocument();
-      expect(screen.queryByText(/Bambu PETG/)).not.toBeInTheDocument();
-    });
+    // slot should be offered.
+    const user = userEvent.setup();
+    await waitFor(() => expect(screen.getByRole('combobox')).toBeInTheDocument());
+    await user.click(screen.getByRole('combobox'));
+
+    const options = screen.getAllByRole('option');
+    expect(options.some((o) => /Bambu PLA/.test(o.textContent || ''))).toBe(false);
+    expect(options.some((o) => /Bambu PETG/.test(o.textContent || ''))).toBe(false);
+    // Only the placeholder remains
+    expect(options).toHaveLength(1);
   });
 });

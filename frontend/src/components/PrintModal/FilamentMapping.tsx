@@ -6,6 +6,7 @@ import { api } from '../../api/client';
 import { useFilamentMapping } from '../../hooks/useFilamentMapping';
 import { getGlobalTrayId } from '../../utils/amsHelpers';
 import { getColorName } from '../../utils/colors';
+import { SlotSelect } from './SlotSelect';
 import { formatCurrency } from '../../utils/currency';
 import type { FilamentMappingProps } from './types';
 
@@ -210,10 +211,11 @@ export function FilamentMapping({
               {/* Arrow */}
               <span className="text-bambu-gray">→</span>
               {/* Slot selector dropdown */}
-              <select
+              <SlotSelect
                 value={item.loaded?.globalTrayId ?? ''}
-                onChange={(e) => handleSlotChange(item.slot_id || 0, e.target.value)}
-                className={`flex-1 px-2 py-1 rounded border text-xs bg-bambu-dark-secondary focus:outline-none focus:ring-1 focus:ring-bambu-green ${
+                onChange={(next) => handleSlotChange(item.slot_id || 0, next)}
+                placeholder={t('printModal.selectSlot', { defaultValue: '-- Select slot --' })}
+                className={`${
                   item.status === 'match'
                     ? 'border-bambu-green/50 text-bambu-green'
                     : item.status === 'type_only'
@@ -221,11 +223,7 @@ export function FilamentMapping({
                     : 'border-orange-400/50 text-orange-400'
                 } ${item.isManual ? 'ring-1 ring-blue-400/50' : ''}`}
                 title={item.isManual ? 'Manually selected' : 'Auto-matched'}
-              >
-                <option value="" className="bg-bambu-dark text-bambu-gray">
-                  -- Select slot --
-                </option>
-                {loadedFilaments
+                options={loadedFilaments
                   .filter(
                     (f) =>
                       item.nozzle_id == null ||
@@ -250,13 +248,14 @@ export function FilamentMapping({
                       ftsTargetExtruder == null
                         ? ''
                         : ` [${ftsTargetExtruder === 1 ? t('printModal.leftNozzle') : t('printModal.rightNozzle')}]`;
-                    return (
-                      <option key={f.globalTrayId} value={f.globalTrayId} className="bg-bambu-dark text-white">
-                        {f.label}: {f.traySubBrands || f.type} ({f.colorName}){remainingLabel}{ftsBadge}
-                      </option>
-                    );
+                    return {
+                      value: f.globalTrayId,
+                      color: f.color,
+                      label: `${f.label}: ${f.traySubBrands || f.type}`,
+                      detail: `(${f.colorName})${remainingLabel}${ftsBadge}`,
+                    };
                 })}
-              </select>
+              />
               {/* Status icon */}
               {item.status === 'match' ? (
                 <Check className="w-3 h-3 text-bambu-green" />

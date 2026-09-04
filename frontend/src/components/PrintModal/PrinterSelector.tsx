@@ -24,6 +24,7 @@ import {
   filterFilamentsByNozzle,
 } from '../../utils/amsHelpers';
 import type { PrinterSelectorProps, AssignmentMode } from './types';
+import { SlotSelect } from './SlotSelect';
 import type { PrinterMappingResult, PerPrinterConfig } from '../../hooks/useMultiPrinterFilamentMapping';
 import type { FilamentRequirement, LoadedFilament } from '../../hooks/useFilamentMapping';
 
@@ -223,10 +224,11 @@ function InlineMappingEditor({
             {req.type} <span className="text-bambu-gray">({req.used_grams}g)</span>
           </span>
           <span className="text-bambu-gray">→</span>
-          <select
+          <SlotSelect
             value={loaded?.globalTrayId ?? ''}
-            onChange={(e) => handleSlotChange(req.slot_id || 0, e.target.value)}
-            className={`flex-1 px-2 py-1 rounded border text-xs bg-bambu-dark-secondary focus:outline-none focus:ring-1 focus:ring-bambu-green ${
+            onChange={(next) => handleSlotChange(req.slot_id || 0, next)}
+            placeholder="-- Select slot --"
+            className={`${
               status === 'match'
                 ? 'border-bambu-green/50 text-bambu-green'
                 : status === 'type_only'
@@ -234,17 +236,13 @@ function InlineMappingEditor({
                 : 'border-orange-400/50 text-orange-400'
             } ${isManual ? 'ring-1 ring-blue-400/50' : ''}`}
             title={isManual ? 'Manually selected' : 'Auto-matched'}
-          >
-            <option value="" className="bg-bambu-dark text-bambu-gray">
-              -- Select slot --
-            </option>
-            {filterFilamentsByNozzle(printerResult.loadedFilaments, req.nozzle_id)
-              .map((f) => (
-              <option key={f.globalTrayId} value={f.globalTrayId} className="bg-bambu-dark text-white">
-                {f.label}: {f.traySubBrands || f.type} ({f.colorName})
-              </option>
-            ))}
-          </select>
+            options={filterFilamentsByNozzle(printerResult.loadedFilaments, req.nozzle_id).map((f) => ({
+              value: f.globalTrayId,
+              color: f.color,
+              label: `${f.label}: ${f.traySubBrands || f.type}`,
+              detail: `(${f.colorName})`,
+            }))}
+          />
           {status === 'match' ? (
             <Check className="w-3 h-3 text-bambu-green" />
           ) : status === 'type_only' ? (
