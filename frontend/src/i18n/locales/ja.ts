@@ -457,6 +457,8 @@ export default {
       success: '{{count}}台のプリンターで{{action}}が完了',
       partial: '{{succeeded}}件成功、{{failed}}件失敗',
       noneApplicable: '選択したプリンターにこのアクションに適した状態のものがありません',
+      clearAllPlates: '{{total}} 台のプレートを片付け済みにする',
+      clearAllPlatesTooltip: '待機中の {{total}} 台すべてでプレートを片付け済みとしてマークします',
       selectByState: 'ステータスで選択',
     },
     // Discovery

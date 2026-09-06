@@ -857,6 +857,80 @@ interface PrinterMaintenanceInfo {
   total_print_hours: number;
 }
 
+/**
+ * Header button that clears every plate waiting to be cleared at once.
+ *
+ * Reads the cached statuses the WebSocket already keeps warm rather than
+ * asking the API, and subscribes to the cache the same throttled way the
+ * status bar does — a plain memo would go stale as prints finish.
+ *
+ * Renders nothing while no plate is waiting, so the toolbar does not carry a
+ * permanently disabled button.
+ */
+function BulkClearPlateButton({
+  printers,
+  requirePlateClear,
+  onClear,
+  disabled,
+}: {
+  printers: Printer[] | undefined;
+  requirePlateClear: boolean;
+  onClear: (printerIds: number[]) => void;
+  disabled?: boolean;
+}) {
+  const { t } = useTranslation();
+  const queryClient = useQueryClient();
+
+  const [cacheTick, setCacheTick] = useState(0);
+  useEffect(() => {
+    let pending = false;
+    const unsubscribe = queryClient.getQueryCache().subscribe(() => {
+      if (!pending) {
+        pending = true;
+        requestAnimationFrame(() => {
+          setCacheTick((n) => n + 1);
+          pending = false;
+        });
+      }
+    });
+    return () => unsubscribe();
+  }, [queryClient]);
+
+  const clearablePrinterIds = useMemo(() => {
+    // The cache tick is the invalidation signal: statuses live in the query
+    // cache, not in props, so nothing else here changes when a print finishes
+    void cacheTick;
+    if (!requirePlateClear) return [];
+    return (printers ?? [])
+      .filter((printer) => {
+        const status = queryClient.getQueryData<{
+          connected: boolean;
+          state: string | null;
+          awaiting_plate_clear?: boolean;
+        }>(['printerStatus', printer.id]);
+        if (!status?.connected || !status.awaiting_plate_clear) return false;
+        // Same rule as the per-card button: not while a print is on the bed
+        return status.state !== 'RUNNING' && status.state !== 'PAUSE';
+      })
+      .map((printer) => printer.id);
+  }, [printers, requirePlateClear, queryClient, cacheTick]);
+
+  if (clearablePrinterIds.length === 0) return null;
+
+  return (
+    <button
+      type="button"
+      onClick={() => onClear(clearablePrinterIds)}
+      disabled={disabled}
+      className="inline-flex items-center gap-1.5 h-8 px-2 rounded-lg border border-yellow-400/40 bg-yellow-500/20 text-yellow-400 text-sm hover:bg-yellow-500/30 transition-colors disabled:opacity-50"
+      title={t('printers.bulk.clearAllPlatesTooltip', { total: clearablePrinterIds.length })}
+    >
+      <CheckSquare className="w-4 h-4" />
+      {t('printers.bulk.clearAllPlates', { total: clearablePrinterIds.length })}
+    </button>
+  );
+}
+
 // Status summary bar component - uses queryClient to read cached statuses
 function StatusSummaryBar({ printers }: { printers: Printer[] | undefined }) {
   const { t } = useTranslation();
@@ -6580,6 +6654,9 @@ export function PrintersPage() {
   const [selectedPrinterIds, setSelectedPrinterIds] = useState<Set<number>>(new Set());
   const [isSelectionMode, setIsSelectionMode] = useState(false);
   const [bulkConfirmAction, setBulkConfirmAction] = useState<'stop' | 'pause' | 'clearPlate' | null>(null);
+  // Printers the header's "clear all plates" button is about to act on. Null
+  // means the confirmation came from selection mode and targets the selection.
+  const [bulkClearTargets, setBulkClearTargets] = useState<number[] | null>(null);
   const [bulkActionPending, setBulkActionPending] = useState(false);
   const selectionMode = isSelectionMode || selectedPrinterIds.size > 0;
 
@@ -6608,9 +6685,13 @@ export function PrintersPage() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [selectionMode, clearSelection]);
 
-  const executeBulkAction = useCallback(async (action: 'stop' | 'pause' | 'resume' | 'clearPlate' | 'clearHMS') => {
+  const executeBulkAction = useCallback(async (
+    action: 'stop' | 'pause' | 'resume' | 'clearPlate' | 'clearHMS',
+    /** Defaults to the current selection; the header buttons pass their own set */
+    targetIds?: number[],
+  ) => {
     setBulkActionPending(true);
-    const ids = Array.from(selectedPrinterIds);
+    const ids = targetIds ?? Array.from(selectedPrinterIds);
 
     // Filter to only applicable printers based on cached state
     const applicableIds = ids.filter(id => {
@@ -6620,7 +6701,10 @@ export function PrintersPage() {
         case 'stop': return status.state === 'RUNNING' || status.state === 'PAUSE';
         case 'pause': return status.state === 'RUNNING';
         case 'resume': return status.state === 'PAUSE';
-        case 'clearPlate': return !!(status as { awaiting_plate_clear?: boolean }).awaiting_plate_clear;
+        case 'clearPlate':
+          // A plate can only be cleared once the print has stopped
+          return !!(status as { awaiting_plate_clear?: boolean }).awaiting_plate_clear
+            && status.state !== 'RUNNING' && status.state !== 'PAUSE';
         case 'clearHMS': return status.hms_errors && filterKnownHMSErrors(status.hms_errors).length > 0;
         default: return false;
       }
@@ -6630,6 +6714,7 @@ export function PrintersPage() {
       showToast(t('printers.bulk.noneApplicable'), 'error');
       setBulkActionPending(false);
       setBulkConfirmAction(null);
+      setBulkClearTargets(null);
       return;
     }
 
@@ -6661,6 +6746,7 @@ export function PrintersPage() {
 
     setBulkActionPending(false);
     setBulkConfirmAction(null);
+    setBulkClearTargets(null);
   }, [selectedPrinterIds, queryClient, showToast, t]);
 
   const handleBulkAction = useCallback((action: 'stop' | 'pause' | 'resume' | 'clearPlate' | 'clearHMS') => {
@@ -7045,6 +7131,16 @@ export function PrintersPage() {
 
   const renderActionControls = (inMenu = false) => (
     <>
+      {/* Clear every waiting plate at once — hidden when none are waiting */}
+      <BulkClearPlateButton
+        printers={printers}
+        requirePlateClear={settings?.require_plate_clear === true}
+        disabled={bulkActionPending || !hasPermission('printers:clear_plate')}
+        onClear={(ids) => {
+          setBulkClearTargets(ids);
+          setBulkConfirmAction('clearPlate');
+        }}
+      />
       {/* Bulk select toggle */}
       <button
         onClick={() => {
@@ -7396,12 +7492,15 @@ export function PrintersPage() {
       )}
       {bulkConfirmAction === 'clearPlate' && (
         <ConfirmModal
-          title={t('printers.bulk.confirm.clearPlateTitle', { count: selectedPrinterIds.size })}
-          message={t('printers.bulk.confirm.clearPlateMessage', { count: selectedPrinterIds.size })}
+          title={t('printers.bulk.confirm.clearPlateTitle', { count: bulkClearTargets?.length ?? selectedPrinterIds.size })}
+          message={t('printers.bulk.confirm.clearPlateMessage', { count: bulkClearTargets?.length ?? selectedPrinterIds.size })}
           confirmText={t('printers.bulk.confirm.clearPlateButton')}
           isLoading={bulkActionPending}
-          onConfirm={() => executeBulkAction('clearPlate')}
-          onCancel={() => setBulkConfirmAction(null)}
+          onConfirm={() => executeBulkAction('clearPlate', bulkClearTargets ?? undefined)}
+          onCancel={() => {
+            setBulkConfirmAction(null);
+            setBulkClearTargets(null);
+          }}
         />
       )}
 

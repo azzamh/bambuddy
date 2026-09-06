@@ -458,6 +458,8 @@ export default {
       success: '{{action}} completato su {{count}} stampante/i',
       partial: '{{succeeded}} riuscito/i, {{failed}} fallito/i',
       noneApplicable: 'Nessuna stampante selezionata è nello stato corretto per questa azione',
+      clearAllPlates: 'Libera {{total}} piatti',
+      clearAllPlatesTooltip: 'Segna il piatto come rimosso su tutte le {{total}} stampanti in attesa',
       selectByState: 'Seleziona per stato',
     },
     // Discovery

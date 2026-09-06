@@ -457,6 +457,8 @@ export default {
       success: '{{action}}已在{{count}}臺印表機上完成',
       partial: '{{succeeded}}成功，{{failed}}失敗',
       noneApplicable: '沒有選中的印表機處於適合此操作的狀態',
+      clearAllPlates: '清空 {{total}} 台印表機的熱床',
+      clearAllPlatesTooltip: '將所有 {{total}} 台等待中印表機的熱床標記為已清理',
       selectByState: '按狀態選擇',
     },
     // Discovery

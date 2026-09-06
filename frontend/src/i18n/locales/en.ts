@@ -458,6 +458,8 @@ export default {
       success: '{{action}} completed on {{count}} printer(s)',
       partial: '{{succeeded}} succeeded, {{failed}} failed',
       noneApplicable: 'No selected printers are in the right state for this action',
+      clearAllPlates: 'Clear {{total}} plates',
+      clearAllPlatesTooltip: 'Mark the plate as cleared on all {{total}} printers waiting',
       selectByState: 'Select by State',
     },
     // Discovery

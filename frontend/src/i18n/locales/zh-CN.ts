@@ -458,6 +458,8 @@ export default {
       success: '{{action}}已在{{count}}台打印机上完成',
       partial: '{{succeeded}}成功，{{failed}}失败',
       noneApplicable: '没有选中的打印机处于适合此操作的状态',
+      clearAllPlates: '清空 {{total}} 台打印机的热床',
+      clearAllPlatesTooltip: '将所有 {{total}} 台等待中打印机的热床标记为已清理',
       selectByState: '按状态选择',
     },
     // Discovery

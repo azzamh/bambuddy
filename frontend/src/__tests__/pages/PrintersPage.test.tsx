@@ -250,6 +250,80 @@ describe('PrintersPage', () => {
       expect(screen.getAllByRole('button', { name: 'Mark plate as cleared' }).length).toBeGreaterThan(0);
     });
 
+    it('offers one header button to clear every waiting plate at once', async () => {
+      server.use(
+        http.get('/api/v1/printers/:id/status', () =>
+          HttpResponse.json({ ...mockPrinterStatus, state: 'FINISH', awaiting_plate_clear: true }),
+        ),
+      );
+
+      render(<PrintersPage />);
+
+      // Both mock printers are waiting, so the button offers to clear both
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: /Clear 2 plates/ })).toBeInTheDocument();
+      });
+    });
+
+    it('hides the header button when no plate is waiting', async () => {
+      server.use(
+        http.get('/api/v1/printers/:id/status', () =>
+          HttpResponse.json({ ...mockPrinterStatus, state: 'IDLE', awaiting_plate_clear: false }),
+        ),
+      );
+
+      render(<PrintersPage />);
+
+      await waitFor(() => {
+        expect(screen.getByText('X1 Carbon')).toBeInTheDocument();
+      });
+      expect(screen.queryByRole('button', { name: /Clear \d+ plates/ })).not.toBeInTheDocument();
+    });
+
+    it('skips printers that are mid-print when counting waiting plates', async () => {
+      server.use(
+        http.get('/api/v1/printers/:id/status', ({ params }) =>
+          HttpResponse.json({
+            ...mockPrinterStatus,
+            // A plate cannot be cleared while a print is still on the bed
+            state: Number(params.id) === 1 ? 'FINISH' : 'RUNNING',
+            awaiting_plate_clear: true,
+          }),
+        ),
+      );
+
+      render(<PrintersPage />);
+
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: /Clear 1 plates/ })).toBeInTheDocument();
+      });
+    });
+
+    it('clears every waiting plate once the header action is confirmed', async () => {
+      const cleared: number[] = [];
+      server.use(
+        http.get('/api/v1/printers/:id/status', () =>
+          HttpResponse.json({ ...mockPrinterStatus, state: 'FINISH', awaiting_plate_clear: true }),
+        ),
+        http.post('/api/v1/printers/:id/clear-plate', ({ params }) => {
+          cleared.push(Number(params.id));
+          return HttpResponse.json({ success: true, message: 'Plate cleared' });
+        }),
+      );
+
+      const user = userEvent.setup();
+      render(<PrintersPage />);
+
+      const button = await screen.findByRole('button', { name: /Clear 2 plates/ });
+      await user.click(button);
+
+      // The action is destructive enough to confirm first
+      const confirm = await screen.findByRole('button', { name: 'Clear All' });
+      await user.click(confirm);
+
+      await waitFor(() => expect(cleared.sort()).toEqual([1, 2]));
+    });
+
     it('updates the plate clear status after using the printer card action', async () => {
       let awaitingPlateClear = true;
 

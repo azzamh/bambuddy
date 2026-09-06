@@ -458,6 +458,8 @@ export default {
       success: '{{action}} auf {{count}} Drucker(n) abgeschlossen',
       partial: '{{succeeded}} erfolgreich, {{failed}} fehlgeschlagen',
       noneApplicable: 'Keine ausgewählten Drucker sind im richtigen Zustand für diese Aktion',
+      clearAllPlates: '{{total}} Platten freigeben',
+      clearAllPlatesTooltip: 'Platte auf allen {{total}} wartenden Druckern als geleert markieren',
       selectByState: 'Nach Status auswählen',
     },
     // Discovery

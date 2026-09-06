@@ -458,6 +458,8 @@ export default {
       success: '{{action}} terminé sur {{count}} imprimante(s)',
       partial: '{{succeeded}} réussi(s), {{failed}} échoué(s)',
       noneApplicable: 'Aucune imprimante sélectionnée n\'est dans le bon état pour cette action',
+      clearAllPlates: 'Libérer {{total}} plateaux',
+      clearAllPlatesTooltip: 'Marquer le plateau comme retiré sur les {{total}} imprimantes en attente',
       selectByState: 'Sélectionner par état',
     },
     // Discovery

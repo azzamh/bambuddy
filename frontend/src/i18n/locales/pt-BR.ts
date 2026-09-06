@@ -458,6 +458,8 @@ export default {
       success: '{{action}} concluído em {{count}} impressora(s)',
       partial: '{{succeeded}} bem-sucedido(s), {{failed}} falhou/falharam',
       noneApplicable: 'Nenhuma impressora selecionada está no estado correto para esta ação',
+      clearAllPlates: 'Liberar {{total}} mesas',
+      clearAllPlatesTooltip: 'Marcar a mesa como liberada em todas as {{total}} impressoras aguardando',
       selectByState: 'Selecionar por estado',
     },
     // Discovery
