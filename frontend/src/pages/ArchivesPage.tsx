@@ -1948,13 +1948,13 @@ function ArchiveListRow({
     <>
       <div
         data-archive-id={archive.id}
-        className={`grid grid-cols-12 gap-4 px-4 py-3 items-center hover:bg-bambu-dark-tertiary/30 ${
+        className={`grid grid-cols-[auto_1fr] gap-x-3 gap-y-2 lg:grid-cols-12 lg:gap-4 px-4 py-3 items-center hover:bg-bambu-dark-tertiary/30 ${
           isSelected ? 'bg-bambu-green/10' : ''
         }`}
         style={isHighlighted ? { outline: '4px solid #facc15', outlineOffset: '-4px' } : undefined}
         onContextMenu={handleContextMenu}
       >
-        <div className="col-span-1 flex items-center gap-2">
+        <div className="lg:col-span-1 flex items-center gap-2">
           {selectionMode && (
             <button onClick={() => onSelect(archive.id)}>
               {isSelected ? (
@@ -1976,7 +1976,7 @@ function ArchiveListRow({
             </div>
           )}
         </div>
-        <div className="col-span-4">
+        <div className="min-w-0 lg:col-span-4">
           <div className="flex items-center gap-2">
             <p className="text-white text-sm truncate">{archive.print_name || archive.filename}</p>
             {(archive.status === 'failed' || archive.status === 'aborted') && (
@@ -2022,6 +2022,24 @@ function ArchiveListRow({
               </Link>
             )}
           </div>
+          {/* The printer / date / size columns are hidden on mobile, so fold
+              them into one line under the name rather than losing them */}
+          <div className="flex flex-wrap items-center mt-1 text-xs gap-x-2 text-bambu-gray lg:hidden">
+            <span className="truncate">{printerName}</span>
+            <span className="text-bambu-gray/50">·</span>
+            <span>{formatDateOnly(archive.created_at)}</span>
+            <span className="text-bambu-gray/50">·</span>
+            <span>{formatFileSize(archive.file_size)}</span>
+            {archive.created_by_username && (
+              <>
+                <span className="text-bambu-gray/50">·</span>
+                <span className="flex items-center gap-1">
+                  <User className="w-3 h-3" />
+                  {archive.created_by_username}
+                </span>
+              </>
+            )}
+          </div>
           {(archive.filament_type || archive.sliced_for_model) && (
             <div className="flex items-center gap-1.5 mt-0.5">
               {archive.sliced_for_model && (
@@ -2051,10 +2069,10 @@ function ArchiveListRow({
             </div>
           )}
         </div>
-        <div className="col-span-2 text-sm text-bambu-gray truncate">
+        <div className="hidden lg:block lg:col-span-2 text-sm text-bambu-gray truncate">
           {printerName}
         </div>
-        <div className="col-span-2 text-sm text-bambu-gray">
+        <div className="hidden lg:block lg:col-span-2 text-sm text-bambu-gray">
           <div>{formatDateOnly(archive.created_at)}</div>
           {archive.created_by_username && (
             <div className="flex items-center gap-1 text-xs opacity-75" title={t('archives.card.uploadedBy', { name: archive.created_by_username })}>
@@ -2063,10 +2081,11 @@ function ArchiveListRow({
             </div>
           )}
         </div>
-        <div className="col-span-1 text-sm text-bambu-gray">
+        <div className="hidden lg:block lg:col-span-1 text-sm text-bambu-gray">
           {formatFileSize(archive.file_size)}
         </div>
-        <div className="col-span-2 flex justify-end gap-1">
+        {/* Actions take their own line on mobile so they cannot squeeze the name */}
+        <div className="col-start-2 lg:col-start-auto lg:col-span-2 flex flex-wrap justify-end gap-1">
           {isSlicedFile(archive) && (
             <Button
               variant="ghost"
@@ -3382,7 +3401,8 @@ export function ArchivesPage() {
           </div>
           {/* Color Filter */}
           {uniqueColors.length > 0 && (
-            <div className="flex items-center gap-3 mt-4 pt-4 border-t border-bambu-dark-tertiary">
+            <div className="flex flex-col gap-2 mt-4 pt-4 border-t border-bambu-dark-tertiary sm:flex-row sm:items-center sm:gap-3">
+              <div className="flex items-center gap-2 flex-shrink-0">
               <span className="text-xs text-bambu-gray">Colors:</span>
               {filterColors.size > 1 && (
                 <button
@@ -3397,7 +3417,10 @@ export function ArchivesPage() {
                   {colorFilterMode.toUpperCase()}
                 </button>
               )}
-              <div className="flex items-center gap-1.5 flex-wrap">
+              </div>
+              {/* A busy farm has dozens of colours; on a phone that wrapped to
+                  four rows and pushed the archive list off screen */}
+              <div className="flex items-center gap-1.5 flex-wrap overflow-y-auto max-h-20 sm:max-h-none sm:overflow-visible">
                 {uniqueColors.map((color) => (
                   <button
                     key={color}
@@ -3493,7 +3516,7 @@ export function ArchivesPage() {
           <Card>
             <div className="divide-y divide-bambu-dark-tertiary">
               {/* List Header */}
-              <div className="grid grid-cols-12 gap-4 px-4 py-3 text-xs text-bambu-gray font-medium">
+              <div className="hidden lg:grid grid-cols-12 gap-4 px-4 py-3 text-xs text-bambu-gray font-medium">
                 <div className="col-span-1"></div>
                 <div className="col-span-4">Name</div>
                 <div className="col-span-2">Printer</div>

@@ -4,6 +4,7 @@
 
 import { describe, it, expect, beforeEach } from 'vitest';
 import { screen, waitFor, fireEvent } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { render } from '../utils';
 import { ArchivesPage } from '../../pages/ArchivesPage';
 import { http, HttpResponse } from 'msw';
@@ -225,6 +226,21 @@ describe('ArchivesPage', () => {
 
       await waitFor(() => {
         expect(screen.getByTitle(/list/i)).toBeInTheDocument();
+      });
+    });
+
+    it('keeps printer and date reachable when the table columns are hidden', async () => {
+      // Below lg the Printer / Date / Size columns are hidden and folded into a
+      // compact line under the name, so each value renders twice: once in the
+      // table cell, once in that line. Dropping to one means a phone lost it.
+      const user = userEvent.setup();
+      render(<ArchivesPage />);
+
+      await waitFor(() => expect(screen.getByTitle(/list/i)).toBeInTheDocument());
+      await user.click(screen.getByTitle(/list/i));
+
+      await waitFor(() => {
+        expect(screen.getAllByText('X1 Carbon').length).toBeGreaterThanOrEqual(2);
       });
     });
   });
